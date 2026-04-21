@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint Capacity Planning — U24</title>
+<style>
+  :root {
+    --green: #639922; --yellow: #BA7517; --red: #E24B4a;
+    --blue: #185FA5; --blue-bg: #E6F1FB; --blue-light: #B5D4F4;
+    --teal: #0F6E56; --teal-bg: #E1F5EE;
+    --amber: #854F0B; --amber-bg: #FAEEDA; --amber-border: #FAC775;
+    --pink: #993556; --pink-bg: #FBEAF0;
+    --purple: #534AB7; --purple-bg: #EEEDFE;
+    --gray: #888780; --gray-bg: #F1EFE8;
+    --border: #e2e2e0; --border2: #d0d0cc;
+    --bg: #f8f8f6; --bg2: #ffffff; --bg3: #f1f0ec;
+    --text: #1a1a18; --text2: #666660; --text3: #999993;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+    --radius: 10px; --radius-sm: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+  /* ── Setup screen ── */
+  #setup-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; }
+  .setup-card { background: var(--bg2); border-radius: 16px; border: 1px solid var(--border); padding: 2.5rem; width: 100%; max-width: 520px; box-shadow: var(--shadow); }
+  .setup-logo { font-size: 28px; margin-bottom: .25rem; }
+  .setup-title { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: .5rem; }
+  .setup-sub { font-size: 14px; color: var(--text2); margin-bottom: 2rem; }
+  .field { margin-bottom: 1.25rem; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem; }
+  .field input, .field select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; background: var(--bg2); color: var(--text); outline: none; transition: border-color .15s; }
+  .field input:focus, .field select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+  .field .hint { font-size: 12px; color: var(--text3); margin-top: .35rem; }
+  .team-list { display: flex; flex-direction: column; gap: 6px; margin-top: .5rem; }
+  .team-row { display: flex; gap: 6px; align-items: center; }
+  .team-row input { flex: 1; }
+  .team-row select { width: 110px; flex-shrink: 0; }
+  .btn-add-team { font-size: 12px; color: var(--blue); background: none; border: none; cursor: pointer; padding: .25rem 0; margin-top: .25rem; }
+  .btn-remove { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); cursor: pointer; color: var(--text2); font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .btn-connect { width: 100%; padding: 10px; background: var(--blue); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; cursor: pointer; transition: background .15s; }
+  .btn-connect:hover { background: #0C447C; }
+  .btn-connect:disabled { background: var(--border2); cursor: not-allowed; }
+  .err-msg { background: #FCEBEB; border: 1px solid #F7C1C1; border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; color: #A32D2D; margin-bottom: 1rem; display: none; }
+
+  /* ── App ── */
+  #app { display: none; min-height: 100vh; }
+  .app-header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: .75rem 1.5rem; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 30; }
+  .app-logo { font-size: 18px; font-weight: 600; color: var(--text); }
+  .app-project { font-size: 12px; color: var(--text2); background: var(--bg3); padding: 2px 8px; border-radius: 4px; }
+  .header-actions { display: flex; gap: 6px; margin-left: auto; align-items: center; flex-wrap: wrap; }
+  .fbtn { padding: 5px 11px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: var(--bg2); color: var(--text2); transition: all .15s; }
+  .fbtn:hover { background: var(--bg3); }
+  .fbtn.active { background: var(--bg3); color: var(--text); font-weight: 500; border-color: var(--border2); }
+  .jbtn { padding: 5px 14px; border-radius: 6px; border: 1px solid var(--blue-light); font-size: 12px; cursor: pointer; background: var(--blue-bg); color: var(--blue); font-weight: 500; position: relative; transition: background .15s; }
+  .jbtn:hover { background: var(--blue-light); }
+  .jbtn.dirty::after { content:''; position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:50%; background:#E24B4A; border:2px solid var(--bg2); }
+  .settings-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: var(--bg2); color: var(--text2); }
+
+  .app-main { padding: 1.5rem; max-width: 900px; margin: 0 auto; }
+
+  /* ── Loading ── */
+  .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem; gap: 1rem; }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 14px; color: var(--text2); }
+
+  /* ── Tabs ── */
+  .tab-bar { display: flex; gap: 6px; margin-bottom: 1.25rem; }
+  .tab { padding: 7px 16px; border-radius: 8px 8px 0 0; border: 1px solid var(--border); border-bottom: none; font-size: 13px; cursor: pointer; background: var(--bg3); color: var(--text2); transition: background .15s; display: flex; align-items: center; gap: 6px; }
+  .tab:hover { background: var(--bg); }
+  .tab.active { background: var(--bg2); color: var(--text); font-weight: 500; }
+  .tab.drag-over { border-color: var(--blue); background: var(--blue-bg); }
+  .tab-pct { font-size: 11px; font-weight: 500; }
+  .tab-line { border-bottom: 1px solid var(--border); margin-bottom: 1.25rem; margin-top: -1.25rem; }
+  .tab-hint { font-size: 11px; color: var(--text3); margin-left: auto; align-self: flex-end; padding-bottom: 3px; }
+  .sprint-panel { display: none; }
+  .sprint-panel.active { display: block; }
+
+  /* ── Sprint header ── */
+  .sprint-header { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: .75rem; box-shadow: var(--shadow); }
+  .sprint-top { display: flex; align-items: center; gap: 10px; margin-bottom: .5rem; }
+  .sprint-name { font-size: 15px; font-weight: 600; color: var(--text); }
+  .sprint-badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 500; }
+  .sprint-dates { font-size: 12px; color: var(--text2); margin-bottom: .75rem; }
+  .sprint-goal { font-size: 12px; color: var(--text2); background: var(--bg3); border-left: 3px solid var(--teal); padding: 5px 10px; border-radius: 0 5px 5px 0; margin-bottom: .75rem; }
+  .days-row { display: flex; align-items: center; gap: 8px; margin-bottom: .75rem; }
+  .days-label { font-size: 12px; color: var(--text2); }
+  .dbtn { width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); cursor: pointer; font-size: 15px; color: var(--text2); display: flex; align-items: center; justify-content: center; transition: background .1s; }
+  .dbtn:hover { background: var(--bg3); }
+  .dval { font-size: 14px; font-weight: 500; min-width: 22px; text-align: center; }
+  .days-cap { font-size: 11px; color: var(--text3); }
+  .sumrow { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+  .sc { background: var(--bg3); border-radius: var(--radius-sm); padding: 8px 12px; }
+  .sc-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+  .sc-val { font-size: 18px; font-weight: 600; color: var(--text); }
+
+  /* ── Vac ── */
+  .vac-bar { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1.25rem; margin-bottom: .75rem; }
+  .vac-title { font-size: 10px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+  .vac-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; }
+  .vi { text-align: center; }
+  .vname { font-size: 10px; color: var(--text2); font-weight: 500; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vctrl { display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .vbtn { width: 20px; height: 20px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); cursor: pointer; font-size: 13px; color: var(--text2); display: flex; align-items: center; justify-content: center; }
+  .vbtn:hover { background: var(--bg3); }
+  .vval { font-size: 12px; font-weight: 500; min-width: 14px; text-align: center; }
+  .vcap { font-size: 9px; color: var(--text3); margin-top: 2px; }
+
+  /* ── Person blocks ── */
+  .person-block { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; background: var(--bg2); box-shadow: var(--shadow); transition: border-color .15s; }
+  .person-block.drop-target { border-color: var(--blue); background: #f0f7ff; }
+  .person-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; cursor: pointer; user-select: none; border-radius: var(--radius); }
+  .person-head:hover { background: var(--bg3); }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .pname { font-size: 13px; font-weight: 500; color: var(--text); }
+  .pmeta { font-size: 11px; color: var(--text2); }
+  .load-wrap { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+  .bar-bg { flex: 1; background: var(--bg3); border-radius: 3px; height: 6px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width .4s, background .4s; }
+  .pct-lbl { font-size: 13px; font-weight: 600; min-width: 36px; text-align: right; }
+  .rem-lbl { font-size: 11px; color: var(--text2); min-width: 60px; text-align: right; }
+  .chev { font-size: 16px; color: var(--text3); transition: transform .2s; flex-shrink: 0; }
+  .chev.open { transform: rotate(90deg); }
+  .person-body { display: none; padding: 0 12px 12px; }
+  .person-body.open { display: block; }
+  .body-inner { border-top: 1px solid var(--border); padding-top: 10px; }
+
+  /* ── Status groups ── */
+  .sg { border-radius: 7px; overflow: hidden; margin-bottom: 6px; border: 1px solid transparent; }
+  .sg-head { display: flex; align-items: center; gap: 7px; padding: 6px 10px; cursor: pointer; user-select: none; }
+  .sg-head:hover { filter: brightness(.97); }
+  .sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .sname { font-size: 12px; font-weight: 500; }
+  .scount { font-size: 11px; color: var(--text2); margin-left: 3px; }
+  .srem { font-size: 11px; font-weight: 500; margin-left: auto; }
+  .sgchev { font-size: 12px; color: var(--text2); transition: transform .15s; margin-left: 5px; }
+  .sgchev.open { transform: rotate(90deg); }
+  .sg-body { display: none; padding: 4px 10px 8px; }
+  .sg-body.open { display: block; }
+
+  /* ── Task rows ── */
+  .task-hdr { display: grid; grid-template-columns: 84px 1fr 72px 46px; gap: 8px; font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; padding: 3px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+  .task-row { display: grid; grid-template-columns: 84px 1fr 72px 46px; gap: 8px; align-items: center; padding: 5px 4px; border-bottom: 1px solid var(--border); cursor: grab; user-select: none; border-radius: 4px; transition: background .1s; }
+  .task-row:last-child { border-bottom: none; }
+  .task-row:hover { background: var(--bg3); }
+  .task-row.dragging { opacity: .3; cursor: grabbing; }
+  .task-row.changed { border-left: 3px solid var(--blue); padding-left: 5px; }
+  .tkey { color: var(--blue); font-weight: 500; font-size: 11px; text-decoration: none; }
+  .tkey:hover { text-decoration: underline; }
+  .tsum { color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ttype { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--bg3); color: var(--text2); text-align: center; border: 1px solid var(--border); }
+  .trem { font-size: 11px; color: var(--text2); text-align: right; }
+  .no-est { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--amber-bg); color: var(--amber); text-align: center; border: 1px solid var(--amber-border); }
+
+  /* ── Notice ── */
+  .notice { border-radius: 7px; padding: 8px 14px; font-size: 13px; margin-bottom: 1rem; display: none; }
+  .notice.show { display: block; }
+  .notice.warn { background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber); }
+  .notice.ok { background: #EAF3DE; border: 1px solid #9FE1CB; color: var(--teal); }
+  .notice.err { background: #FCEBEB; border: 1px solid #F7C1C1; color: #A32D2D; }
+
+  /* ── Modal ── */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--bg2); border-radius: 14px; border: 1px solid var(--border); padding: 1.5rem; width: 92%; max-width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+  .modal-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: .35rem; }
+  .modal-sub { font-size: 13px; color: var(--text2); margin-bottom: 1rem; }
+  .ch-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .ch-row:last-child { border-bottom: none; }
+  .ch-top { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+  .ch-key { color: var(--blue); font-weight: 500; min-width: 76px; }
+  .ch-badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 500; }
+  .ch-arr { color: var(--text3); }
+  .ch-to { color: var(--blue); font-weight: 500; }
+  .ch-sum { font-size: 11px; color: var(--text3); margin-top: 3px; padding-left: 82px; }
+  .mactions { display: flex; gap: 8px; margin-top: 1.25rem; justify-content: flex-end; }
+  .mbtn { padding: 7px 18px; border-radius: 7px; font-size: 13px; cursor: pointer; font-weight: 500; }
+  .mbtn.cancel { border: 1px solid var(--border); background: var(--bg2); color: var(--text2); }
+  .mbtn.cancel:hover { background: var(--bg3); }
+  .mbtn.apply { border: none; background: var(--blue); color: #fff; }
+  .mbtn.apply:hover { background: #0C447C; }
+
+  /* ── Settings panel ── */
+  .settings-modal { max-width: 420px; }
+  .settings-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .settings-row input, .settings-row select { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; }
+  .settings-row .btn-remove { flex-shrink: 0; }
+
+  .refresh-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; cursor: pointer; background: var(--bg2); color: var(--text2); }
+  .refresh-btn:hover { background: var(--bg3); }
+
+  @media (max-width: 600px) {
+    .load-wrap { min-width: 120px; }
+    .rem-lbl { display: none; }
+    .sumrow { grid-template-columns: 1fr 1fr; }
+    .vac-grid { grid-template-columns: repeat(3,1fr); }
+    .task-hdr, .task-row { grid-template-columns: 76px 1fr 54px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════ SETUP SCREEN ════════════════ -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-logo">📊</div>
+    <div class="setup-title">Sprint Capacity Planning</div>
+    <div class="setup-sub">Підключи Jira і налаштуй команду — один раз, потім все автоматично.</div>
+
+    <div id="err-msg" class="err-msg"></div>
+
+    <div class="field">
+      <label>Jira URL</label>
+      <input type="text" id="jira-url" placeholder="https://your-company.atlassian.net" value="">
+      <div class="hint">Адреса твого Jira (без слеша в кінці)</div>
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="jira-email" placeholder="you@company.com">
+    </div>
+    <div class="field">
+      <label>API Token</label>
+      <input type="password" id="jira-token" placeholder="••••••••••••••••••••••••">
+      <div class="hint">Створи на <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color:var(--blue)">id.atlassian.com</a> → Security → API tokens</div>
+    </div>
+    <div class="field">
+      <label>Jira Project Key</label>
+      <input type="text" id="jira-project" placeholder="U24" value="U24">
+    </div>
+    <div class="field">
+      <label>Команда (ім'я в Jira → ініціали → роль)</label>
+      <div class="team-list" id="team-list"></div>
+      <button class="btn-add-team" onclick="addTeamRow()">+ Додати учасника</button>
+    </div>
+
+    <button class="btn-connect" id="btn-connect" onclick="connect()">Підключитись і завантажити спринт</button>
+  </div>
+</div>
+
+<!-- ════════════════ APP ════════════════ -->
+<div id="app">
+  <div class="app-header">
+    <div class="app-logo">📊 Capacity Planning</div>
+    <div class="app-project" id="header-project">U24</div>
+    <div class="header-actions">
+      <button class="fbtn active" onclick="setFilter('all',this)">Усі</button>
+      <button class="fbtn" onclick="setFilter('inprogress',this)">In Progress</button>
+      <button class="fbtn" onclick="setFilter('noest',this)">Без оцінки</button>
+      <button class="fbtn" id="tog-btn" onclick="toggleAll()">Згорнути всіх</button>
+      <button class="refresh-btn" onclick="refreshData()" title="Перезавантажити дані з Jira">↻ Оновити</button>
+      <button class="settings-btn" onclick="openSettings()">⚙ Налаштування</button>
+      <button class="jbtn" id="jbtn" onclick="openModal()">Застосувати в Jira</button>
+    </div>
+  </div>
+
+  <div class="app-main">
+    <div id="notice" class="notice"></div>
+    <div id="loading" class="loading" style="display:none;">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-text">Завантаження...</div>
+    </div>
+    <div id="board" style="display:none;">
+      <div class="tab-bar">
+        <div class="tab active" id="tab-s0" onclick="switchTab(0)" ondragover="onTabOver(event,0)" ondrop="onTabDrop(event,0)" ondragleave="onTabLeave(0)">
+          <span id="tab-name-0">Sprint 1</span>
+          <span class="tab-pct" id="tab-pct-0"></span>
+        </div>
+        <div class="tab" id="tab-s1" onclick="switchTab(1)" ondragover="onTabOver(event,1)" ondrop="onTabDrop(event,1)" ondragleave="onTabLeave(1)">
+          <span id="tab-name-1">Sprint 2</span>
+          <span class="tab-pct" id="tab-pct-1"></span>
+        </div>
+        <span class="tab-hint">← перетягни задачу на вкладку для переносу між спринтами</span>
+      </div>
+      <div class="tab-line"></div>
+      <div class="sprint-panel active" id="panel-0"></div>
+      <div class="sprint-panel" id="panel-1"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Changes modal -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <div class="modal-title">Застосувати зміни в Jira</div>
+    <div class="modal-sub" id="modal-sub"></div>
+    <div id="modal-list"></div>
+    <div class="mactions">
+      <button class="mbtn cancel" onclick="closeModal()">Скасувати</button>
+      <button class="mbtn apply" id="modal-apply-btn" onclick="applyJira()">Зберегти в Jira</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-bg" id="settings-bg">
+  <div class="modal settings-modal">
+    <div class="modal-title">Налаштування</div>
+    <div class="modal-sub">Зміни набудуть чинності після збереження та оновлення даних.</div>
+    <div class="field">
+      <label>Jira URL</label>
+      <input type="text" id="s-jira-url">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="s-jira-email">
+    </div>
+    <div class="field">
+      <label>API Token</label>
+      <input type="password" id="s-jira-token" placeholder="залиш порожнім щоб не змінювати">
+    </div>
+    <div class="field">
+      <label>Project Key</label>
+      <input type="text" id="s-jira-project">
+    </div>
+    <div class="field">
+      <label>Команда</label>
+      <div id="s-team-list"></div>
+      <button class="btn-add-team" onclick="addSettingsTeamRow()">+ Додати учасника</button>
+    </div>
+    <div class="mactions">
+      <button class="mbtn cancel" onclick="closeSettings()">Скасувати</button>
+      <button class="mbtn apply" onclick="saveSettings()">Зберегти та оновити</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// CONFIG & STATE
+// ══════════════════════════════════════════════
+const ROLE_COLORS = {
+  Android: {bg:'#E6F1FB',color:'#185FA5'},
+  iOS:     {bg:'#FBEAF0',color:'#993556'},
+  Backend: {bg:'#E1F5EE',color:'#0F6E56'},
+  QA:      {bg:'#FAEEDA',color:'#854F0B'},
+  Design:  {bg:'#EEEDFE',color:'#534AB7'},
+  Other:   {bg:'#F1EFE8',color:'#5F5E5A'},
+};
+const SC = {
+  'In Progress': {color:'#378ADD',bg:'#E6F1FB'},
+  'To do':       {color:'#888780',bg:'#F1EFE8'},
+  'Testing':     {color:'#BA7517',bg:'#FAEEDA'},
+  'To Test':     {color:'#7F77DD',bg:'#EEEDFE'},
+  'Review':      {color:'#D85A30',bg:'#FAECE7'},
+  'Ready for Deploy': {color:'#0F6E56',bg:'#E1F5EE'},
+};
+const STATUS_ORDER = ['In Progress','To do','Testing','To Test','Review'];
+const HPD = 8;
+const SKIP_STATUSES = new Set(['Ready for Deploy']);
+
+let cfg = {
+  url: '', email: '', token: '', project: 'U24',
+  team: [
+    {name:'Ігор Шаповаленко', initials:'ІШ', role:'Android'},
+    {name:'Олексій Підкуйко', initials:'ОП', role:'Backend'},
+    {name:'Олександр Жмурко', initials:'ОЖ', role:'QA'},
+    {name:'Дмитро Пасінчук', initials:'ДП', role:'iOS'},
+    {name:'Ілля Герасимов', initials:'ІГ', role:'iOS'},
+  ]
+};
+
+let sprints = []; // [{id,name,dates,goal,tasks:{personId:[...]}}]
+let sprintDays = [];
+let vacDays = [];
+let openPersons = [];
+let openStatuses = {};
+let allExpanded = true;
+let currentFilter = 'all';
+let currentTab = 0;
+let dragKey = null, dragFrom = null, dragFromSprint = null;
+let orig = {}; // key → {sprint,person}
+
+// ══════════════════════════════════════════════
+// SETUP
+// ══════════════════════════════════════════════
+function addTeamRow(name='', initials='', role='iOS') {
+  const list = document.getElementById('team-list');
+  const row = document.createElement('div');
+  row.className = 'team-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Ім'я в Jira" value="${name}">
+    <input type="text" placeholder="ІН" value="${initials}" style="width:50px;flex:none;">
+    <select>${['Android','iOS','Backend','QA','Design','Other'].map(r=>`<option${r===role?' selected':''}>${r}</option>`).join('')}</select>
+    <button class="btn-remove" onclick="this.parentElement.remove()">×</button>`;
+  list.appendChild(row);
+}
+
+function addSettingsTeamRow(name='', initials='', role='iOS') {
+  const list = document.getElementById('s-team-list');
+  const row = document.createElement('div');
+  row.className = 'settings-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Ім'я в Jira" value="${name}">
+    <input type="text" placeholder="ІН" value="${initials}" style="width:50px;flex:none;">
+    <select>${['Android','iOS','Backend','QA','Design','Other'].map(r=>`<option${r===role?' selected':''}>${r}</option>`).join('')}</select>
+    <button class="btn-remove" onclick="this.parentElement.remove()">×</button>`;
+  list.appendChild(row);
+}
+
+// Pre-fill default team
+document.addEventListener('DOMContentLoaded', () => {
+  cfg.team.forEach(m => addTeamRow(m.name, m.initials, m.role));
+  // Load saved config
+  const saved = localStorage.getItem('capacity-cfg');
+  if (saved) {
+    try {
+      const s = JSON.parse(saved);
+      cfg = { ...cfg, ...s };
+      document.getElementById('jira-url').value = cfg.url || '';
+      document.getElementById('jira-email').value = cfg.email || '';
+      document.getElementById('jira-project').value = cfg.project || 'U24';
+      document.getElementById('team-list').innerHTML = '';
+      cfg.team.forEach(m => addTeamRow(m.name, m.initials, m.role));
+    } catch(e) {}
+  }
+});
+
+function getTeamFromForm(listId='team-list') {
+  const rows = document.querySelectorAll(`#${listId} .team-row, #${listId} .settings-row`);
+  const team = [];
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const sel = row.querySelector('select');
+    if (inputs[0].value.trim()) {
+      team.push({ name: inputs[0].value.trim(), initials: inputs[1].value.trim() || inputs[0].value.trim().split(' ').map(w=>w[0]).join('').slice(0,2), role: sel.value });
+    }
+  });
+  return team;
+}
+
+async function connect() {
+  const url = document.getElementById('jira-url').value.trim().replace(/\/$/, '');
+  const email = document.getElementById('jira-email').value.trim();
+  const token = document.getElementById('jira-token').value.trim();
+  const project = document.getElementById('jira-project').value.trim().toUpperCase();
+  const team = getTeamFromForm();
+
+  if (!url || !email || !token || !project || !team.length) {
+    showErr('Заповни всі поля та додай хоча б одного учасника.'); return;
+  }
+
+  cfg = { url, email, token, project, team };
+  localStorage.setItem('capacity-cfg', JSON.stringify({url, email, project, team}));
+
+  document.getElementById('btn-connect').disabled = true;
+  document.getElementById('btn-connect').textContent = 'Підключення...';
+  hideErr();
+
+  try {
+    await loadData();
+    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('header-project').textContent = cfg.project;
+  } catch(e) {
+    showErr(`Помилка: ${e.message}`);
+    document.getElementById('btn-connect').disabled = false;
+    document.getElementById('btn-connect').textContent = 'Підключитись і завантажити спринт';
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('err-msg');
+  el.textContent = msg; el.style.display = 'block';
+}
+function hideErr() { document.getElementById('err-msg').style.display = 'none'; }
+
+// ══════════════════════════════════════════════
+// JIRA API
+// ══════════════════════════════════════════════
+function jiraHeaders() {
+  return {
+    'Authorization': 'Basic ' + btoa(`${cfg.email}:${cfg.token}`),
+    'Content-Type': 'application/json',
+  };
+}
+
+async function jiraGet(path) {
+  const res = await fetch(`${cfg.url}/rest/api/3${path}`, { headers: jiraHeaders() });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Jira API ${res.status}: ${text.slice(0,200)}`);
+  }
+  return res.json();
+}
+
+async function jiraPut(path, body) {
+  const res = await fetch(`${cfg.url}/rest/api/3${path}`, {
+    method: 'PUT', headers: jiraHeaders(), body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`Jira API ${res.status}`);
+  return res.status === 204 ? null : res.json();
+}
+
+async function searchJira(jql, fields, startAt=0, maxResults=100) {
+  const res = await fetch(`${cfg.url}/rest/api/3/search`, {
+    method: 'POST',
+    headers: jiraHeaders(),
+    body: JSON.stringify({ jql, fields, startAt, maxResults, expand: [] })
+  });
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json();
+}
+
+const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components'];
+
+async function fetchPersonIssues(sprintName, personName) {
+  const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
+  const data = await searchJira(jql, FIELDS);
+  return data.issues || [];
+}
+
+async function fetchSprintMeta(sprintName) {
+  const jql = `project = ${cfg.project} AND sprint = "${sprintName}" ORDER BY created ASC`;
+  const data = await searchJira(jql, FIELDS, 0, 1);
+  const issue = (data.issues || [])[0];
+  if (!issue) return null;
+  const sf = (issue.fields.customfield_10020 || []).find(s => s.name === sprintName);
+  return sf || null;
+}
+
+async function getActiveSprints() {
+  const jql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
+  const data = await searchJira(jql, FIELDS, 0, 1);
+  const issue = (data.issues || [])[0];
+  if (!issue) return [];
+  return (issue.fields.customfield_10020 || []).filter(s => s.state === 'active' || s.state === 'future');
+}
+
+async function loadData() {
+  setLoading(true, 'Знаходимо активні спринти...');
+
+  // Get all sprints for project
+  const allSprints = await getActiveSprints();
+  if (!allSprints.length) throw new Error('Не знайдено активних спринтів у проекті ' + cfg.project);
+
+  // Take active + next future sprint (up to 2)
+  const sprintDefs = allSprints.slice(0, 2);
+
+  sprints = [];
+  sprintDays = [];
+  vacDays = [];
+  openPersons = [];
+  orig = {};
+
+  for (let si = 0; si < sprintDefs.length; si++) {
+    const sp = sprintDefs[si];
+    setLoading(true, `Завантажуємо ${sp.name}...`);
+
+    // Calc working days
+    const start = new Date(sp.startDate);
+    const end = new Date(sp.endDate);
+    let wd = 0;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) wd++;
+    }
+
+    const tasks = {};
+    const vac = {};
+    const openP = {};
+
+    for (const member of cfg.team) {
+      setLoading(true, `${sp.name}: завантажуємо ${member.name}...`);
+      try {
+        const issues = await fetchPersonIssues(sp.name, member.name);
+        const pid = memberKey(member);
+        tasks[pid] = issues
+          .filter(i => !SKIP_STATUSES.has(i.fields.status.name))
+          .map(i => ({
+            key: i.key,
+            type: i.fields.issuetype.name,
+            status: i.fields.status.name,
+            rem: Math.round((i.fields.timeestimate || 0) / 360) / 10,
+            est: Math.round((i.fields.timeoriginalestimate || 0) / 360) / 10,
+            sum: i.fields.summary,
+          }));
+        tasks[pid].forEach(t => { orig[t.key] = { sprint: si, person: pid }; });
+        vac[pid] = 0;
+        openP[pid] = true;
+      } catch(e) {
+        console.warn(`Failed to load ${member.name} for ${sp.name}:`, e);
+        const pid = memberKey(member);
+        tasks[pid] = [];
+        vac[pid] = 0;
+        openP[pid] = true;
+      }
+    }
+
+    sprints.push({
+      id: si, name: sp.name,
+      dates: formatDates(sp.startDate, sp.endDate),
+      goal: sp.goal || '',
+      tasks,
+    });
+    sprintDays.push(wd);
+    vacDays.push(vac);
+    openPersons.push(openP);
+  }
+
+  setLoading(false);
+  renderAll();
+}
+
+function memberKey(m) { return m.name.replace(/\s+/g,'_').toLowerCase(); }
+function getMember(pid) { return cfg.team.find(m => memberKey(m) === pid); }
+
+function formatDates(start, end) {
+  const fmt = d => new Date(d).toLocaleDateString('uk-UA',{day:'numeric',month:'short'});
+  return `${fmt(start)} — ${fmt(end)}`;
+}
+
+// ══════════════════════════════════════════════
+// CAPACITY MATH
+// ══════════════════════════════════════════════
+function getCap(si, pid) { return Math.max(0, (sprintDays[si] - (vacDays[si][pid]||0)) * HPD); }
+function getRem(si, pid) { return Math.round(sprints[si].tasks[pid].reduce((s,t)=>s+t.rem,0)*10)/10; }
+function getPct(si, pid) { const c=getCap(si,pid); return c>0?Math.round(getRem(si,pid)/c*100):0; }
+function barCol(p) { return p<=85?'#639922':p<=95?'#BA7517':'#E24B4A'; }
+
+function getChanges() {
+  const ch = [];
+  sprints.forEach((sp,si) => {
+    Object.entries(sp.tasks).forEach(([pid, list]) => {
+      list.forEach(t => {
+        const o = orig[t.key];
+        if (o && (o.sprint !== si || o.person !== pid)) {
+          ch.push({ key:t.key, sum:t.sum, fromSprint:o.sprint, fromPerson:o.person, toSprint:si, toPerson:pid });
+        }
+      });
+    });
+  });
+  return ch;
+}
+
+// ══════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════
+function renderAll() {
+  document.getElementById('board').style.display = 'block';
+  const changes = getChanges().map(c=>c.key);
+
+  // Update tab labels
+  sprints.forEach((sp,si) => {
+    document.getElementById(`tab-name-${si}`).textContent = sp.name;
+    const tCap = cfg.team.reduce((s,m)=>s+getCap(si,memberKey(m)),0);
+    const tRem = cfg.team.reduce((s,m)=>s+getRem(si,memberKey(m)),0);
+    const p = tCap>0?Math.round(tRem/tCap*100):0;
+    const pctEl = document.getElementById(`tab-pct-${si}`);
+    pctEl.textContent = p+'%'; pctEl.style.color = barCol(p);
+  });
+
+  // Render each sprint panel
+  sprints.forEach((sp,si) => {
+    const tCap = cfg.team.reduce((s,m)=>s+getCap(si,memberKey(m)),0);
+    const tRem = cfg.team.reduce((s,m)=>s+getRem(si,memberKey(m)),0);
+    const p = tCap>0?Math.round(tRem/tCap*100):0;
+    const bc = barCol(p);
+
+    const vacHtml = cfg.team.map(m => {
+      const pid = memberKey(m);
+      return `<div class="vi">
+        <div class="vname" title="${m.name}">${m.initials}</div>
+        <div class="vctrl">
+          <button class="vbtn" onclick="chVac(${si},'${pid}',-1)">−</button>
+          <span class="vval" id="vv-${si}-${pid}">${vacDays[si][pid]||0}</span>
+          <button class="vbtn" onclick="chVac(${si},'${pid}',1)">+</button>
+        </div>
+        <div class="vcap" id="vc-${si}-${pid}">${getCap(si,pid)}г</div>
+      </div>`;
+    }).join('');
+
+    const personsHtml = cfg.team.map(m => renderPerson(si, m, changes)).join('');
+
+    document.getElementById(`panel-${si}`).innerHTML = `
+      <div class="sprint-header">
+        <div class="sprint-top">
+          <span class="sprint-name">${sp.name}</span>
+          <span class="sprint-badge" style="background:${si===0?'#E6F1FB':'#E1F5EE'};color:${si===0?'#185FA5':'#0F6E56'};">
+            ${si===0?'Активний':'Наступний'}
+          </span>
+        </div>
+        <div class="sprint-dates">${sp.dates}</div>
+        ${sp.goal?`<div class="sprint-goal">${sp.goal}</div>`:''}
+        <div class="days-row">
+          <span class="days-label">Робочих днів:</span>
+          <button class="dbtn" onclick="chDays(${si},-1)">−</button>
+          <span class="dval" id="dd-${si}">${sprintDays[si]}</span>
+          <button class="dbtn" onclick="chDays(${si},1)">+</button>
+          <span class="days-cap" id="dc-${si}">(${sprintDays[si]*HPD}г/особу)</span>
+        </div>
+        <div class="sumrow">
+          <div class="sc"><div class="sc-label">Капасіті</div><div class="sc-val" id="scap-${si}">${tCap}г</div></div>
+          <div class="sc"><div class="sc-label">Remaining</div><div class="sc-val" id="srem-${si}">${Math.round(tRem*10)/10}г</div></div>
+          <div class="sc"><div class="sc-label">Навантаження</div><div class="sc-val" id="sload-${si}" style="color:${bc};">${p}%</div></div>
+        </div>
+      </div>
+      <div class="vac-bar"><div class="vac-title">Відпустки</div><div class="vac-grid">${vacHtml}</div></div>
+      <div id="persons-${si}">${personsHtml}</div>`;
+  });
+
+  bindDrag();
+  document.getElementById('jbtn').classList.toggle('dirty', getChanges().length>0);
+}
+
+function renderPerson(si, m, changes) {
+  const pid = memberKey(m);
+  const pct = getPct(si, pid);
+  const rem = getRem(si, pid);
+  const cap = getCap(si, pid);
+  const bc = barCol(pct);
+  const rc = ROLE_COLORS[m.role] || ROLE_COLORS.Other;
+  const isOpen = openPersons[si]?.[pid] !== false;
+
+  const filtered = sprints[si].tasks[pid].filter(filterT);
+  const groups = {};
+  filtered.forEach(t => { if(!groups[t.status]) groups[t.status]=[]; groups[t.status].push(t); });
+  const sorted = STATUS_ORDER.filter(s=>groups[s]).map(s=>([s,groups[s]]));
+
+  const groupsHtml = sorted.map(([status, list]) => {
+    const sd = SC[status]||{color:'#888',bg:'#f5f5f5'};
+    const sgId = `${si}-${pid}-${status.replace(/\s/g,'_')}`;
+    if (!(sgId in openStatuses)) openStatuses[sgId] = true;
+    const sgOpen = openStatuses[sgId];
+    const sgRem = list.reduce((s,t)=>s+t.rem,0);
+    const rows = list.map(t => {
+      const remCell = t.est===0 ? `<span class="no-est">нема</span>` : `<span class="trem">${t.rem}г</span>`;
+      return `<div class="task-row${changes.includes(t.key)?' changed':''}" draggable="true"
+        data-key="${t.key}" data-from="${pid}" data-sprint="${si}">
+        <a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a>
+        <span class="tsum" title="${t.sum}">${t.sum.length>50?t.sum.slice(0,50)+'…':t.sum}</span>
+        <span class="ttype">${t.type}</span>
+        ${remCell}
+      </div>`;
+    }).join('');
+
+    return `<div class="sg" style="border-color:${sd.color}33;">
+      <div class="sg-head" style="background:${sd.bg};" onclick="toggleSg('${sgId}')">
+        <div class="sdot" style="background:${sd.color};"></div>
+        <span class="sname" style="color:${sd.color};">${status}</span>
+        <span class="scount">${list.length}</span>
+        ${sgRem>0?`<span class="srem" style="color:${sd.color};">${Math.round(sgRem*10)/10}г</span>`:''}
+        <span class="sgchev${sgOpen?' open':''}" id="sgc-${sgId}">›</span>
+      </div>
+      <div class="sg-body${sgOpen?' open':''}" id="sgb-${sgId}">
+        <div class="task-hdr"><span>Ключ</span><span>Назва</span><span>Тип</span><span style="text-align:right;">Rem</span></div>
+        ${rows}
+      </div>
+    </div>`;
+  }).join('');
+
+  const empty = sorted.length===0 ? `<div style="font-size:12px;color:var(--text3);padding:10px 0;text-align:center;">Немає активних задач — перетягни сюди</div>` : '';
+
+  return `<div class="person-block" id="pb-${si}-${pid}"
+    ondragover="onOver(event,${si},'${pid}')"
+    ondrop="onDrop(event,${si},'${pid}')"
+    ondragleave="onLeave(${si},'${pid}')">
+    <div class="person-head" onclick="toggleP(${si},'${pid}')">
+      <div class="avatar" style="background:${rc.bg};color:${rc.color};">${m.initials}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="pname">${m.name.split(' ').slice(0,2).join(' ')}</div>
+        <div class="pmeta">${m.role} · ${sprints[si].tasks[pid].length} задач</div>
+      </div>
+      <div class="load-wrap">
+        <div class="bar-bg"><div class="bar-fill" style="width:${Math.min(pct,100)}%;background:${bc};"></div></div>
+        <span class="pct-lbl" style="color:${bc};">${pct}%</span>
+        <span class="rem-lbl">${rem}г/${cap}г</span>
+      </div>
+      <span class="chev${isOpen?' open':''}" id="chv-${si}-${pid}">›</span>
+    </div>
+    <div class="person-body${isOpen?' open':''}" id="pbd-${si}-${pid}">
+      <div class="body-inner">${groupsHtml}${empty}</div>
+    </div>
+  </div>`;
+}
+
+function bindDrag() {
+  document.querySelectorAll('.task-row[draggable]').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      dragKey = el.dataset.key; dragFrom = el.dataset.from; dragFromSprint = parseInt(el.dataset.sprint);
+      setTimeout(() => el.classList.add('dragging'), 0);
+      e.stopPropagation();
+    });
+    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+  });
+}
+
+// ══════════════════════════════════════════════
+// INTERACTIONS
+// ══════════════════════════════════════════════
+function switchTab(si) {
+  currentTab = si;
+  [0,1].forEach(i => {
+    document.getElementById(`tab-s${i}`)?.classList.toggle('active', i===si);
+    document.getElementById(`panel-${i}`)?.classList.toggle('active', i===si);
+  });
+}
+
+function toggleP(si, pid) {
+  if (!openPersons[si]) openPersons[si] = {};
+  openPersons[si][pid] = !(openPersons[si][pid] !== false);
+  document.getElementById(`pbd-${si}-${pid}`)?.classList.toggle('open', openPersons[si][pid]);
+  document.getElementById(`chv-${si}-${pid}`)?.classList.toggle('open', openPersons[si][pid]);
+}
+function toggleSg(sgId) {
+  openStatuses[sgId] = !openStatuses[sgId];
+  document.getElementById(`sgb-${sgId}`)?.classList.toggle('open', openStatuses[sgId]);
+  document.getElementById(`sgc-${sgId}`)?.classList.toggle('open', openStatuses[sgId]);
+}
+function toggleAll() {
+  allExpanded = !allExpanded;
+  sprints.forEach((_,si) => {
+    cfg.team.forEach(m => {
+      const pid = memberKey(m);
+      if (!openPersons[si]) openPersons[si] = {};
+      openPersons[si][pid] = allExpanded;
+      document.getElementById(`pbd-${si}-${pid}`)?.classList.toggle('open', allExpanded);
+      document.getElementById(`chv-${si}-${pid}`)?.classList.toggle('open', allExpanded);
+    });
+  });
+  document.getElementById('tog-btn').textContent = allExpanded ? 'Згорнути всіх' : 'Розгорнути всіх';
+}
+
+function onOver(e, si, pid) { e.preventDefault(); document.getElementById(`pb-${si}-${pid}`)?.classList.add('drop-target'); }
+function onLeave(si, pid) { document.getElementById(`pb-${si}-${pid}`)?.classList.remove('drop-target'); }
+function onDrop(e, toSprint, toPerson) {
+  e.preventDefault();
+  document.getElementById(`pb-${toSprint}-${toPerson}`)?.classList.remove('drop-target');
+  if (!dragKey) return;
+  if (dragFromSprint===toSprint && dragFrom===toPerson) { dragKey=null; return; }
+  const fromList = sprints[dragFromSprint].tasks[dragFrom];
+  const idx = fromList.findIndex(t=>t.key===dragKey);
+  if (idx===-1) { dragKey=null; return; }
+  const [task] = fromList.splice(idx,1);
+  sprints[toSprint].tasks[toPerson].push(task);
+  dragKey=null;
+  renderAll();
+}
+
+function onTabOver(e, si) {
+  if (!dragKey || dragFromSprint===si) return;
+  e.preventDefault();
+  document.getElementById(`tab-s${si}`)?.classList.add('drag-over');
+}
+function onTabLeave(si) { document.getElementById(`tab-s${si}`)?.classList.remove('drag-over'); }
+function onTabDrop(e, toSprint) {
+  e.preventDefault();
+  document.getElementById(`tab-s${toSprint}`)?.classList.remove('drag-over');
+  if (!dragKey || dragFromSprint===toSprint) return;
+  const fromList = sprints[dragFromSprint].tasks[dragFrom];
+  const idx = fromList.findIndex(t=>t.key===dragKey);
+  if (idx===-1) return;
+  const [task] = fromList.splice(idx,1);
+  sprints[toSprint].tasks[dragFrom].push(task);
+  const k = dragKey; dragKey=null;
+  renderAll();
+  switchTab(toSprint);
+  showNotice(`✓ ${k} перенесено в ${sprints[toSprint].name}`, 'ok');
+}
+
+function chVac(si, pid, d) {
+  if (!vacDays[si]) vacDays[si] = {};
+  vacDays[si][pid] = Math.max(0, Math.min(sprintDays[si], (vacDays[si][pid]||0)+d));
+  document.getElementById(`vv-${si}-${pid}`).textContent = vacDays[si][pid];
+  document.getElementById(`vc-${si}-${pid}`).textContent = getCap(si,pid)+'г';
+  updateLoadBar(si, pid);
+  updateSprintSum(si);
+}
+
+function chDays(si, d) {
+  sprintDays[si] = Math.max(1, Math.min(20, sprintDays[si]+d));
+  document.getElementById(`dd-${si}`).textContent = sprintDays[si];
+  document.getElementById(`dc-${si}`).textContent = `(${sprintDays[si]*HPD}г/особу)`;
+  cfg.team.forEach(m => {
+    const pid = memberKey(m);
+    const el = document.getElementById(`vc-${si}-${pid}`);
+    if (el) el.textContent = getCap(si,pid)+'г';
+    updateLoadBar(si, pid);
+  });
+  updateSprintSum(si);
+}
+
+function updateLoadBar(si, pid) {
+  const pct=getPct(si,pid), rem=getRem(si,pid), cap=getCap(si,pid), bc=barCol(pct);
+  const fill=document.querySelector(`#pb-${si}-${pid} .bar-fill`);
+  if(fill){fill.style.width=Math.min(pct,100)+'%';fill.style.background=bc;}
+  const pl=document.querySelector(`#pb-${si}-${pid} .pct-lbl`);
+  if(pl){pl.textContent=pct+'%';pl.style.color=bc;}
+  const rl=document.querySelector(`#pb-${si}-${pid} .rem-lbl`);
+  if(rl) rl.textContent=`${rem}г/${cap}г`;
+}
+
+function updateSprintSum(si) {
+  const tCap=cfg.team.reduce((s,m)=>s+getCap(si,memberKey(m)),0);
+  const tRem=cfg.team.reduce((s,m)=>s+getRem(si,memberKey(m)),0);
+  const p=tCap>0?Math.round(tRem/tCap*100):0;
+  const bc=barCol(p);
+  document.getElementById(`scap-${si}`).textContent=tCap+'г';
+  document.getElementById(`srem-${si}`).textContent=Math.round(tRem*10)/10+'г';
+  const el=document.getElementById(`sload-${si}`);
+  el.textContent=p+'%'; el.style.color=bc;
+  const tabPct=document.getElementById(`tab-pct-${si}`);
+  if(tabPct){tabPct.textContent=p+'%';tabPct.style.color=bc;}
+}
+
+function setFilter(f, btn) {
+  currentFilter=f;
+  document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderAll();
+}
+function filterT(t) {
+  if(currentFilter==='inprogress') return t.status==='In Progress';
+  if(currentFilter==='noest') return t.est===0;
+  return true;
+}
+
+// ══════════════════════════════════════════════
+// JIRA WRITE
+// ══════════════════════════════════════════════
+function openModal() {
+  const ch = getChanges();
+  if (!ch.length) { showNotice('Немає змін для збереження.','warn'); return; }
+  document.getElementById('modal-sub').textContent = `${ch.length} задач будуть переасайнені:`;
+  document.getElementById('modal-list').innerHTML = ch.map(c => {
+    const fromM = getMember(c.fromPerson), toM = getMember(c.toPerson);
+    const fromSp = sprints[c.fromSprint]?.name, toSp = sprints[c.toSprint]?.name;
+    return `<div class="ch-row">
+      <div class="ch-top">
+        <span class="ch-key">${c.key}</span>
+        <span class="ch-badge" style="background:#E6F1FB;color:#185FA5;">${fromSp}</span>
+        <span class="ch-arr">→</span>
+        <span class="ch-badge" style="background:#E1F5EE;color:#0F6E56;">${toSp}</span>
+        ${c.fromPerson!==c.toPerson?`<span style="font-size:11px;color:var(--text2);">· ${toM?.name||c.toPerson}</span>`:''}
+      </div>
+      <div class="ch-sum">${c.sum.length>60?c.sum.slice(0,60)+'…':c.sum}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('modal-bg').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-bg').classList.remove('open'); }
+
+async function applyJira() {
+  const ch = getChanges();
+  const btn = document.getElementById('modal-apply-btn');
+  btn.disabled=true; btn.textContent='Збереження...';
+  const errors = [];
+  for (const c of ch) {
+    const toM = getMember(c.toPerson);
+    if (!toM) continue;
+    try {
+      // Find accountId for assignee
+      const userSearch = await jiraGet(`/user/search?query=${encodeURIComponent(toM.name)}&maxResults=1`);
+      const accountId = userSearch[0]?.accountId;
+      if (!accountId) { errors.push(`${c.key}: не знайдено користувача ${toM.name}`); continue; }
+      await jiraPut(`/issue/${c.key}`, { fields: { assignee: { accountId } } });
+      // Move to sprint if different
+      if (c.fromSprint !== c.toSprint) {
+        const targetSprint = sprints[c.toSprint];
+        // Find sprint id
+        const searchData = await searchJira(`project = ${cfg.project} AND sprint = "${targetSprint.name}"`, ['customfield_10020'], 0, 1);
+        const spIssue = searchData.issues?.[0];
+        const spField = spIssue?.fields?.customfield_10020?.find(s=>s.name===targetSprint.name);
+        if (spField?.id) {
+          await fetch(`${cfg.url}/rest/agile/1.0/sprint/${spField.id}/issue`, {
+            method:'POST', headers: jiraHeaders(),
+            body: JSON.stringify({ issues: [c.key] })
+          });
+        }
+      }
+      orig[c.key] = { sprint: c.toSprint, person: c.toPerson };
+    } catch(e) { errors.push(`${c.key}: ${e.message}`); }
+  }
+  btn.disabled=false; btn.textContent='Зберегти в Jira';
+  closeModal();
+  if (errors.length) {
+    showNotice(`Частково застосовано. Помилки: ${errors.join('; ')}`, 'err');
+  } else {
+    showNotice(`✓ ${ch.length} задач оновлено в Jira!`, 'ok');
+  }
+  renderAll();
+}
+
+// ══════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════
+function openSettings() {
+  document.getElementById('s-jira-url').value = cfg.url;
+  document.getElementById('s-jira-email').value = cfg.email;
+  document.getElementById('s-jira-token').value = '';
+  document.getElementById('s-jira-project').value = cfg.project;
+  document.getElementById('s-team-list').innerHTML = '';
+  cfg.team.forEach(m => addSettingsTeamRow(m.name, m.initials, m.role));
+  document.getElementById('settings-bg').classList.add('open');
+}
+function closeSettings() { document.getElementById('settings-bg').classList.remove('open'); }
+async function saveSettings() {
+  const newTeam = getTeamFromForm('s-team-list');
+  const newToken = document.getElementById('s-jira-token').value.trim();
+  cfg.url = document.getElementById('s-jira-url').value.trim().replace(/\/$/, '');
+  cfg.email = document.getElementById('s-jira-email').value.trim();
+  cfg.project = document.getElementById('s-jira-project').value.trim().toUpperCase();
+  cfg.team = newTeam;
+  if (newToken) cfg.token = newToken;
+  localStorage.setItem('capacity-cfg', JSON.stringify({url:cfg.url,email:cfg.email,project:cfg.project,team:cfg.team}));
+  closeSettings();
+  await refreshData();
+}
+
+async function refreshData() {
+  try {
+    await loadData();
+    showNotice('✓ Дані оновлено з Jira', 'ok');
+  } catch(e) {
+    showNotice(`Помилка оновлення: ${e.message}`, 'err');
+  }
+}
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function setLoading(show, text='') {
+  document.getElementById('loading').style.display = show ? 'flex' : 'none';
+  document.getElementById('board').style.display = show ? 'none' : 'block';
+  if (text) document.getElementById('loading-text').textContent = text;
+}
+
+function showNotice(msg, type) {
+  const n = document.getElementById('notice');
+  n.textContent = msg; n.className = `notice ${type} show`;
+  clearTimeout(n._t);
+  n._t = setTimeout(() => n.classList.remove('show'), 5000);
+}
+
+[document.getElementById('modal-bg'), document.getElementById('settings-bg')].forEach(el => {
+  el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
