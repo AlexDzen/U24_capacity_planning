@@ -521,12 +521,21 @@ async function jiraPut(path, body) {
 }
 
 async function searchJira(jql, fields, startAt=0, maxResults=100) {
-  const res = await fetch(buildUrl('/search'), {
-    method: 'POST',
-    headers: jiraHeaders(),
-    body: JSON.stringify({ jql, fields, startAt, maxResults, expand: [] })
+  // Use new /search/jql endpoint (Jira Cloud CHANGE-2046)
+  const params = new URLSearchParams({
+    jql,
+    fields: fields.join(','),
+    startAt,
+    maxResults,
   });
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  const res = await fetch(buildUrl(`/search/jql?${params.toString()}`), {
+    method: 'GET',
+    headers: jiraHeaders(),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Search failed: ${res.status} ${txt.slice(0,200)}`);
+  }
   return res.json();
 }
 
