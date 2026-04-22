@@ -141,8 +141,8 @@
   .sg-body.open { display: block; }
 
   /* ── Task rows ── */
-  .task-hdr { display: grid; grid-template-columns: 84px 1fr 72px 46px; gap: 8px; font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; padding: 3px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
-  .task-row { display: grid; grid-template-columns: 84px 1fr 72px 46px; gap: 8px; align-items: center; padding: 5px 4px; border-bottom: 1px solid var(--border); cursor: grab; user-select: none; border-radius: 4px; transition: background .1s; }
+  .task-hdr { display: grid; grid-template-columns: 84px 1fr 90px 60px 80px; gap: 6px; font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; padding: 3px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+  .task-row { display: grid; grid-template-columns: 84px 1fr 90px 60px 80px; gap: 6px; align-items: center; padding: 5px 4px; border-bottom: 1px solid var(--border); cursor: grab; user-select: none; border-radius: 4px; transition: background .1s; }
   .task-row:last-child { border-bottom: none; }
   .task-row:hover { background: var(--bg3); }
   .task-row.dragging { opacity: .3; cursor: grabbing; }
@@ -155,6 +155,32 @@
   .no-est { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--amber-bg); color: var(--amber); text-align: center; border: 1px solid var(--amber-border); }
 
   /* ── Notice ── */
+  /* Priority badges */
+  .p-critical { color:#A32D2D; font-size:10px; font-weight:600; }
+  .p-high     { color:#BA7517; font-size:10px; font-weight:600; }
+  .p-medium   { color:#5F5E5A; font-size:10px; }
+  .p-low      { color:#999993; font-size:10px; }
+  .epic-tag { font-size:10px; color:var(--purple); background:var(--purple-bg); padding:1px 5px; border-radius:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; display:inline-block; }
+  .est-rem { font-size:11px; color:var(--text2); white-space:nowrap; }
+  .est-rem .rem { color:var(--text3); }
+  .est-edit { font-size:11px; border:1px solid var(--blue); border-radius:4px; padding:1px 4px; width:52px; outline:none; }
+  /* Unassigned section */
+  .unassigned-block { border:1px dashed var(--amber-border); border-radius:var(--radius); margin-bottom:8px; background:var(--amber-bg)08; }
+  .unassigned-head { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; }
+  .unassigned-head:hover { background:var(--amber-bg)33; border-radius:var(--radius); }
+  /* Backlog tab */
+  .backlog-section { margin-bottom:1rem; }
+  .backlog-filter { display:flex; gap:6px; margin-bottom:.75rem; flex-wrap:wrap; }
+  .bfbtn { padding:4px 10px; border-radius:6px; border:1px solid var(--border); font-size:12px; cursor:pointer; background:var(--bg2); color:var(--text2); }
+  .bfbtn.active { background:var(--bg3); color:var(--text); font-weight:500; border-color:var(--border2); }
+  .backlog-row { display:grid; grid-template-columns:84px 1fr 90px 60px 80px 100px; gap:6px; align-items:center; padding:5px 4px; border-bottom:1px solid var(--border); font-size:12px; border-radius:4px; transition:background .1s; }
+  .backlog-row:hover { background:var(--bg3); }
+  .backlog-row:last-child { border-bottom:none; }
+  .backlog-hdr { display:grid; grid-template-columns:84px 1fr 90px 60px 80px 100px; gap:6px; font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:.04em; padding:3px 0 6px; border-bottom:1px solid var(--border); margin-bottom:2px; }
+  .add-to-sprint { font-size:11px; padding:2px 8px; border-radius:5px; border:1px solid var(--blue-light); background:var(--blue-bg); color:var(--blue); cursor:pointer; white-space:nowrap; }
+  .add-to-sprint:hover { background:var(--blue-light); }
+  .no-issues { font-size:12px; color:var(--text3); text-align:center; padding:2rem 0; }
+
   .notice { border-radius: 7px; padding: 8px 14px; font-size: 13px; margin-bottom: 1rem; display: none; }
   .notice.show { display: block; }
   .notice.warn { background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber); }
@@ -196,7 +222,7 @@
     .rem-lbl { display: none; }
     .sumrow { grid-template-columns: 1fr 1fr; }
     .vac-grid { grid-template-columns: repeat(3,1fr); }
-    .task-hdr, .task-row { grid-template-columns: 76px 1fr 54px 40px; }
+    .task-hdr, .task-row { grid-template-columns: 76px 1fr 80px 50px 70px; }
   }
 </style>
 </head>
@@ -539,11 +565,23 @@ async function searchJira(jql, fields, startAt=0, maxResults=100) {
   return res.json();
 }
 
-const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components'];
+const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority'];
 
 async function fetchPersonIssues(sprintName, personName) {
   const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
   const data = await searchJira(jql, FIELDS);
+  return data.issues || [];
+}
+
+async function fetchUnassignedIssues(sprintName) {
+  const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee is EMPTY`;
+  const data = await searchJira(jql, FIELDS);
+  return data.issues || [];
+}
+
+async function fetchBacklogIssues() {
+  const jql = `project = ${cfg.project} AND sprint is EMPTY AND status != Done ORDER BY priority ASC, created DESC`;
+  const data = await searchJira(jql, FIELDS, 0, 100);
   return data.issues || [];
 }
 
@@ -585,6 +623,22 @@ async function getActiveSprints() {
   return all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }).slice(0, 2);
 }
 
+function parseIssue(i) {
+  const parent = i.fields.parent;
+  const epicName = parent?.fields?.issuetype?.name === 'Epic' ? parent.fields.summary : null;
+  return {
+    key: i.key,
+    type: i.fields.issuetype.name,
+    status: i.fields.status.name,
+    rem: Math.round((i.fields.timeestimate || 0) / 360) / 10,
+    est: Math.round((i.fields.timeoriginalestimate || 0) / 360) / 10,
+    sum: i.fields.summary,
+    priority: i.fields.priority?.name || 'Medium',
+    epic: epicName,
+    assignee: i.fields.assignee?.displayName || null,
+  };
+}
+
 async function loadData() {
   setLoading(true, 'Знаходимо активні спринти...');
 
@@ -624,14 +678,7 @@ async function loadData() {
         const pid = memberKey(member);
         tasks[pid] = issues
           .filter(i => !SKIP_STATUSES.has(i.fields.status.name))
-          .map(i => ({
-            key: i.key,
-            type: i.fields.issuetype.name,
-            status: i.fields.status.name,
-            rem: Math.round((i.fields.timeestimate || 0) / 360) / 10,
-            est: Math.round((i.fields.timeoriginalestimate || 0) / 360) / 10,
-            sum: i.fields.summary,
-          }));
+          .map(i => parseIssue(i));
         tasks[pid].forEach(t => { orig[t.key] = { sprint: si, person: pid }; });
         vac[pid] = 0;
         openP[pid] = true;
@@ -655,8 +702,15 @@ async function loadData() {
     openPersons.push(openP);
   }
 
+  // Load backlog
+  setLoading(true, 'Завантажуємо backlog...');
+  let backlogIssues = [];
+  try {
+    backlogIssues = (await fetchBacklogIssues()).map(i => parseIssue(i));
+  } catch(e) { console.warn('Backlog load failed:', e); }
+
   setLoading(false);
-  renderAll();
+  renderAll(backlogIssues);
 }
 
 function memberKey(m) { return m.name.replace(/\s+/g,'_').toLowerCase(); }
@@ -693,8 +747,130 @@ function getChanges() {
 // ══════════════════════════════════════════════
 // RENDER
 // ══════════════════════════════════════════════
-function renderAll() {
+let _backlog = [];
+function priorityBadge(p) {
+  const map = { Critical:'🔴', Highest:'🔴', High:'🟠', Medium:'⚪', Low:'🔵', Lowest:'🔵' };
+  const cls = { Critical:'p-critical', Highest:'p-critical', High:'p-high', Medium:'p-medium', Low:'p-low', Lowest:'p-low' };
+  return `<span class="${cls[p]||'p-medium'}">${map[p]||'⚪'} ${p||'Medium'}</span>`;
+}
+
+function toggleUA(si) {
+  const body = document.getElementById(`ua-body-${si}`);
+  const chev = document.getElementById(`ua-chev-${si}`);
+  const open = body?.classList.toggle('open');
+  chev?.classList.toggle('open', open);
+}
+
+let editingEst = null;
+function startEditEst(e, key, si, pid, est, rem) {
+  e.stopPropagation(); e.preventDefault();
+  if (editingEst) return;
+  const span = e.currentTarget;
+  editingEst = key;
+  const orig = span.innerHTML;
+  span.innerHTML = `<input class="est-edit" type="number" min="0" step="0.5" value="${est}" onblur="saveEst(event,'${key}',${si},'${pid}')" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.parentElement.innerHTML='${orig}';editingEst=null;}">`;
+  span.querySelector('input').focus();
+  span.querySelector('input').select();
+}
+async function saveEst(e, key, si, pid) {
+  const val = parseFloat(e.target.value) || 0;
+  const secs = Math.round(val * 3600);
+  editingEst = null;
+  // Update local state
+  const task = sprints[si]?.tasks[pid]?.find(t=>t.key===key);
+  if (task) { task.est = val; task.rem = val; }
+  // Save to Jira
+  try {
+    await jiraPut(`/issue/${key}`, { fields: { timeoriginalestimate: secs, timeestimate: secs } });
+    showNotice(`✓ Естімейт ${key} оновлено: ${val}г`, 'ok');
+  } catch(err) {
+    showNotice(`Помилка збереження: ${err.message}`, 'err');
+  }
+  renderAll();
+}
+
+let backlogFilter = 'all';
+function renderBacklog() {
+  const panel = document.getElementById('panel-backlog');
+  if (!panel) return;
+  const filtered = _backlog.filter(t => {
+    if (backlogFilter === 'noest') return t.est === 0;
+    if (backlogFilter === 'bug') return t.type === 'Bug';
+    return true;
+  });
+  const rows = filtered.map(t => {
+    const estCell = t.est===0 ? '<span class="no-est">нема</span>' : `<span class="est-rem">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
+    const epicCell = t.epic ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>14?t.epic.slice(0,14)+'…':t.epic}</span>` : `<span class="ttype">${t.type}</span>`;
+    const sprintOptions = sprints.map((sp,si)=>`<option value="${si}">${sp.name}</option>`).join('');
+    return `<div class="backlog-row">
+      <a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank">${t.key}</a>
+      <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
+      ${epicCell}
+      ${priorityBadge(t.priority)}
+      ${estCell}
+      <select onchange="addToSprint('${t.key}',this.value)" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);">
+        <option value="">+ В спринт...</option>
+        ${sprintOptions}
+      </select>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="backlog-section">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:.75rem;">
+        <div style="font-size:15px;font-weight:600;color:var(--text);">Backlog</div>
+        <div style="font-size:13px;color:var(--text2);">${_backlog.length} задач</div>
+      </div>
+      <div class="backlog-filter">
+        <button class="bfbtn${backlogFilter==='all'?' active':''}" onclick="setBFilter('all',this)">Всі</button>
+        <button class="bfbtn${backlogFilter==='noest'?' active':''}" onclick="setBFilter('noest',this)">Без оцінки</button>
+        <button class="bfbtn${backlogFilter==='bug'?' active':''}" onclick="setBFilter('bug',this)">Bugs</button>
+      </div>
+      ${filtered.length ? `
+        <div class="backlog-hdr"><span>Ключ</span><span>Назва</span><span>Тип / Епік</span><span>Пріоритет</span><span>Est / Rem</span><span>Дія</span></div>
+        ${rows}
+      ` : '<div class="no-issues">Немає задач за фільтром</div>'}
+    </div>`;
+}
+
+function setBFilter(f, btn) {
+  backlogFilter = f;
+  document.querySelectorAll('.bfbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBacklog();
+}
+
+async function addToSprint(key, si) {
+  if (si === '') return;
+  const sprintName = sprints[parseInt(si)]?.name;
+  if (!sprintName) return;
+  try {
+    // Find sprint id
+    const searchData = await searchJira(`project = ${cfg.project} AND sprint = "${sprintName}"`, ['customfield_10020'], 0, 1);
+    const spField = searchData.issues?.[0]?.fields?.customfield_10020?.find(s=>s.name===sprintName);
+    if (!spField?.id) throw new Error('Sprint not found');
+    await fetch(buildAgileUrl(`/sprint/${spField.id}/issue`), {
+      method:'POST', headers: jiraHeaders(),
+      body: JSON.stringify({ issues: [key] })
+    });
+    // Remove from backlog locally
+    _backlog = _backlog.filter(t=>t.key!==key);
+    showNotice(`✓ ${key} додано в ${sprintName}`, 'ok');
+    renderBacklog();
+    // Update tab count
+    const bpct = document.getElementById('tab-pct-backlog');
+    if (bpct) bpct.textContent = _backlog.length ? `${_backlog.length}` : '';
+  } catch(err) {
+    showNotice(`Помилка: ${err.message}`, 'err');
+  }
+}
+
+function renderAll(backlogIssues) {
+  if (backlogIssues !== undefined) _backlog = backlogIssues;
   document.getElementById('board').style.display = 'block';
+  // Backlog tab count
+  const bpct = document.getElementById('tab-pct-backlog');
+  if (bpct) bpct.textContent = _backlog.length ? `${_backlog.length}` : '';
   const changes = getChanges().map(c=>c.key);
 
   // Update tab labels
@@ -753,6 +929,33 @@ function renderAll() {
         </div>
       </div>
       <div class="vac-bar"><div class="vac-title">Відпустки</div><div class="vac-grid">${vacHtml}</div></div>
+      ${sp.unassigned?.length ? `
+      <div class="unassigned-block" id="ua-${si}">
+        <div class="unassigned-head" onclick="toggleUA(${si})">
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--amber-bg);color:var(--amber);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;">?</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:500;color:var(--text);">Без асайні</div>
+            <div style="font-size:11px;color:var(--text2);">${sp.unassigned.length} задач · ${Math.round(sp.unassigned.reduce((s,t)=>s+t.rem,0)*10)/10}г remaining</div>
+          </div>
+          <span class="chev open" id="ua-chev-${si}">›</span>
+        </div>
+        <div class="person-body open" id="ua-body-${si}">
+          <div class="body-inner">
+            <div class="task-hdr"><span>Ключ</span><span>Назва</span><span>Тип / Епік</span><span>Пріоритет</span><span style="text-align:right;">Est / Rem</span></div>
+            ${sp.unassigned.map(t => {
+              const estRemCell = t.est===0 ? '<span class="no-est">нема</span>' : `<span class="est-rem">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
+              const epicCell = t.epic ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>14?t.epic.slice(0,14)+'…':t.epic}</span>` : `<span class="ttype">${t.type}</span>`;
+              return `<div class="task-row" style="cursor:default;">
+                <a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank">${t.key}</a>
+                <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
+                ${epicCell}
+                ${priorityBadge(t.priority)}
+                ${estRemCell}
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>` : ''}
       <div id="persons-${si}">${personsHtml}</div>`;
   });
 
@@ -800,7 +1003,7 @@ function renderPerson(si, m, changes) {
         <span class="sgchev${sgOpen?' open':''}" id="sgc-${sgId}">›</span>
       </div>
       <div class="sg-body${sgOpen?' open':''}" id="sgb-${sgId}">
-        <div class="task-hdr"><span>Ключ</span><span>Назва</span><span>Тип</span><span style="text-align:right;">Rem</span></div>
+        <div class="task-hdr"><span>Ключ</span><span>Назва</span><span>Тип / Епік</span><span>Пріоритет</span><span style="text-align:right;">Est / Rem</span></div>
         ${rows}
       </div>
     </div>`;
@@ -851,6 +1054,9 @@ function switchTab(si) {
     document.getElementById(`tab-s${i}`)?.classList.toggle('active', i===si);
     document.getElementById(`panel-${i}`)?.classList.toggle('active', i===si);
   });
+  document.getElementById('tab-backlog')?.classList.toggle('active', si==='backlog');
+  document.getElementById('panel-backlog')?.classList.toggle('active', si==='backlog');
+  if (si==='backlog') renderBacklog();
 }
 
 function toggleP(si, pid) {
