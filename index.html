@@ -557,11 +557,32 @@ async function fetchSprintMeta(sprintName) {
 }
 
 async function getActiveSprints() {
-  const jql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
-  const data = await searchJira(jql, FIELDS, 0, 1);
-  const issue = (data.issues || [])[0];
-  if (!issue) return [];
-  return (issue.fields.customfield_10020 || []).filter(s => s.state === 'active' || s.state === 'future');
+  // Fetch active sprint
+  const activeJql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
+  const activeData = await searchJira(activeJql, ['customfield_10020'], 0, 1);
+  const activeIssue = (activeData.issues || [])[0];
+  const activeSprints = activeIssue
+    ? (activeIssue.fields.customfield_10020 || []).filter(s => s.state === 'active')
+    : [];
+
+  // Fetch future sprint
+  let futureSprints = [];
+  try {
+    const futureJql = `project = ${cfg.project} AND sprint in futureSprints() ORDER BY created ASC`;
+    const futureData = await searchJira(futureJql, ['customfield_10020'], 0, 1);
+    const futureIssue = (futureData.issues || [])[0];
+    futureSprints = futureIssue
+      ? (futureIssue.fields.customfield_10020 || []).filter(s => s.state === 'future')
+      : [];
+  } catch(e) {
+    console.warn('No future sprints found:', e.message);
+  }
+
+  // Combine: active first, then future (up to 2 total)
+  const all = [...activeSprints, ...futureSprints];
+  // Deduplicate by id
+  const seen = new Set();
+  return all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }).slice(0, 2);
 }
 
 async function loadData() {
