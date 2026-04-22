@@ -777,6 +777,32 @@ async function loadData() {
       }
     }
 
+    // Enrich parentInfo with epic for Story parents
+    try {
+      const spKeys = new Set();
+      Object.values(tasks).forEach(list => {
+        list.forEach(t => { if (t.parentKey && t.parentInfo?.type === 'Story') spKeys.add(t.parentKey); });
+      });
+      if (spKeys.size > 0) {
+        const spJql = [...spKeys].map(k=>`key = ${k}`).join(' OR ');
+        const spData = await searchJira(`(${spJql})`, ['summary','parent','customfield_10014','customfield_10015'], 0, 50);
+        const spEpics = {};
+        (spData.issues || []).forEach(issue => {
+          const pType = issue.fields.parent?.fields?.issuetype?.name;
+          let eName = (pType === 'Epic' && issue.fields.parent?.fields?.summary) ? issue.fields.parent.fields.summary : null;
+          if (!eName && issue.fields.customfield_10015) eName = issue.fields.customfield_10015;
+          spEpics[issue.key] = eName;
+        });
+        Object.values(tasks).forEach(list => {
+          list.forEach(t => {
+            if (t.parentKey && spEpics[t.parentKey] !== undefined && t.parentInfo) {
+              t.parentInfo.epic = spEpics[t.parentKey];
+            }
+          });
+        });
+      }
+    } catch(e) { console.warn('Epic enrichment failed:', e); }
+
     sprints.push({
       id: si, name: sp.name,
       dates: formatDates(sp.startDate, sp.endDate),
@@ -1434,6 +1460,32 @@ async function addSprintTab(sprintName) {
       console.log('[Enrichment] updated', enrichCount, 'tasks');
     }
   } catch(e) { console.warn('Story epic enrichment failed:', e); }
+
+  // Enrich parentInfo with epic for Story parents
+  try {
+    const storyParentKeys2 = new Set();
+    Object.values(tasks).forEach(list => {
+      list.forEach(t => { if (t.parentKey && t.parentInfo?.type === 'Story') storyParentKeys2.add(t.parentKey); });
+    });
+    if (storyParentKeys2.size > 0) {
+      const keysJql2 = [...storyParentKeys2].map(k=>`key = ${k}`).join(' OR ');
+      const storyData2 = await searchJira(`(${keysJql2})`, ['summary','parent','customfield_10014','customfield_10015'], 0, 50);
+      const epicByKey2 = {};
+      (storyData2.issues || []).forEach(issue => {
+        const pType = issue.fields.parent?.fields?.issuetype?.name;
+        let eName = pType === 'Epic' && issue.fields.parent?.fields?.summary ? issue.fields.parent.fields.summary : null;
+        if (!eName && issue.fields.customfield_10015) eName = issue.fields.customfield_10015;
+        epicByKey2[issue.key] = eName;
+      });
+      Object.values(tasks).forEach(list => {
+        list.forEach(t => {
+          if (t.parentKey && epicByKey2[t.parentKey] !== undefined && t.parentInfo) {
+            t.parentInfo.epic = epicByKey2[t.parentKey];
+          }
+        });
+      });
+    }
+  } catch(e) { console.warn('Epic enrichment in loadData failed:', e); }
 
   let unassigned = [];
   try {
