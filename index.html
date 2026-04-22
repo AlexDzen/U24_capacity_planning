@@ -1421,13 +1421,17 @@ async function addSprintTab(sprintName) {
         if (!eName && issue.fields.customfield_10015) eName = issue.fields.customfield_10015;
         epicByKey[issue.key] = eName;
       });
+      console.log('[Enrichment] epicByKey:', JSON.stringify(epicByKey));
+      let enrichCount = 0;
       Object.values(tasks).forEach(list => {
         list.forEach(t => {
           if (t.parentKey && epicByKey[t.parentKey] !== undefined && t.parentInfo) {
             t.parentInfo.epic = epicByKey[t.parentKey];
+            enrichCount++;
           }
         });
       });
+      console.log('[Enrichment] updated', enrichCount, 'tasks');
     }
   } catch(e) { console.warn('Story epic enrichment failed:', e); }
 
