@@ -1262,8 +1262,9 @@ function renderPerson(si, m, changes) {
       const storyEstCell = story.est===0
         ? `<span class="no-est">нема</span>`
         : `<span class="est-rem">${storyEst}г <span class="rem">/ ${storyRem}г</span></span>`;
-      const storyEpicCell = story.epic
-        ? `<span class="epic-tag" title="${story.epic}">${story.epic.length>16?story.epic.slice(0,16)+'…':story.epic}</span>`
+      const storyEpic = story.epic || story.epicFromParent || null;
+      const storyEpicCell = storyEpic
+        ? `<span class="epic-tag" title="${storyEpic}">${storyEpic.length>16?storyEpic.slice(0,16)+'…':storyEpic}</span>`
         : `<span class="ttype" style="color:var(--text3);">—</span>`;
       return `<div class="story-group">
         <div class="story-header-row" draggable="true" data-key="${story.key}" data-from="${pid}" data-sprint="${si}" onclick="toggleStoryGroup('${gid}',event)">
@@ -1287,11 +1288,14 @@ function renderPerson(si, m, changes) {
       return renderStoryGroup(story, subs);
     }).join('');
 
-    // Virtual story headers for sub-tasks whose parent is assigned to someone else
+    // Virtual story headers — enrich with epic from first sub-task's parentInfo
     const virtualGroupHtml = Object.values(virtualStories).map(story => {
       const subs = (subtasksByParent[story.key] || []);
       if (!subs.length) return '';
-      return renderStoryGroup(story, subs);
+      // Get epic from parentInfo stored in sub-tasks
+      const epicFromSub = subs[0]?.parentInfo?.epic || null;
+      const enrichedStory = { ...story, epic: story.epic || epicFromSub };
+      return renderStoryGroup(enrichedStory, subs);
     }).join('');
 
     const rows = storyGroupHtml + virtualGroupHtml
@@ -1400,6 +1404,33 @@ async function addSprintTab(sprintName) {
     } catch(e) { tasks[pid] = []; }
     vac[pid] = 0; openP[pid] = true;
   }
+  // Enrich parentInfo with epic for Story parents
+  try {
+    const storyParentKeys = new Set();
+    Object.values(tasks).forEach(list => {
+      list.forEach(t => { if (t.parentKey && t.parentInfo?.type === 'Story') storyParentKeys.add(t.parentKey); });
+    });
+    if (storyParentKeys.size > 0) {
+      const keysJql = [...storyParentKeys].map(k=>`key = ${k}`).join(' OR ');
+      const storyData = await searchJira(`(${keysJql})`, ['summary','parent','customfield_10014','customfield_10015'], 0, 50);
+      const epicByKey = {};
+      (storyData.issues || []).forEach(issue => {
+        const pType = issue.fields.parent?.fields?.issuetype?.name;
+        let eName = null;
+        if (pType === 'Epic' && issue.fields.parent?.fields?.summary) eName = issue.fields.parent.fields.summary;
+        if (!eName && issue.fields.customfield_10015) eName = issue.fields.customfield_10015;
+        epicByKey[issue.key] = eName;
+      });
+      Object.values(tasks).forEach(list => {
+        list.forEach(t => {
+          if (t.parentKey && epicByKey[t.parentKey] !== undefined && t.parentInfo) {
+            t.parentInfo.epic = epicByKey[t.parentKey];
+          }
+        });
+      });
+    }
+  } catch(e) { console.warn('Story epic enrichment failed:', e); }
+
   let unassigned = [];
   try {
     const uIssues = await fetchUnassignedIssues(sp.name);
