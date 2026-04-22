@@ -592,7 +592,7 @@ async function searchJira(jql, fields, startAt=0, maxResults=100) {
   return res.json();
 }
 
-const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority','customfield_10014'];
+const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority','customfield_10014','customfield_10015'];
 
 async function fetchPersonIssues(sprintName, personName) {
   const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
@@ -622,15 +622,22 @@ async function fetchSprintMeta(sprintName) {
 }
 
 async function fetchAllSprints() {
-  // Get all sprints for project (active + future + recent closed)
-  const jql = `project = ${cfg.project} AND sprint is not EMPTY ORDER BY created DESC`;
-  const data = await searchJira(jql, ['customfield_10020'], 0, 1);
-  const issue = data.issues?.[0];
-  if (!issue) return [];
-  const all = issue.fields.customfield_10020 || [];
-  // Sort: active first, then future, then closed by date
-  const order = {active:0, future:1, closed:2};
-  return all.sort((a,b) => (order[a.state]||2) - (order[b.state]||2) || new Date(b.startDate||0) - new Date(a.startDate||0));
+  // Get active + future sprints only (no closed)
+  const results = [];
+  for (const jqlFilter of ['openSprints()', 'futureSprints()']) {
+    try {
+      const jql = `project = ${cfg.project} AND sprint in ${jqlFilter}`;
+      const data = await searchJira(jql, ['customfield_10020'], 0, 1);
+      const issue = data.issues?.[0];
+      if (!issue) continue;
+      const spFields = (issue.fields.customfield_10020 || []).filter(s =>
+        s.state === 'active' || s.state === 'future'
+      );
+      spFields.forEach(s => { if (!results.find(r=>r.id===s.id)) results.push(s); });
+    } catch(e) { console.warn('fetchAllSprints:', jqlFilter, e); }
+  }
+  const order = {active:0, future:1};
+  return results.sort((a,b) => (order[a.state]||1) - (order[b.state]||1));
 }
 
 async function getActiveSprints() {
@@ -665,14 +672,21 @@ async function getActiveSprints() {
 function parseIssue(i) {
   const parent = i.fields.parent;
   const parentType = parent?.fields?.issuetype?.name;
-  // For Sub-tasks: parent is Story/Task, epic is grandparent
-  // For Story/Task: parent is Epic directly, OR use customfield_10014 (Epic Link name)
+  // Epic resolution:
+  // - Sub-task: parent is Story/Task → epic comes from Story's parent (not available here, skip)
+  // - Story/Task: parent IS the Epic → use parent.fields.summary
+  // - Story/Task: parent.fields might be minimal → also try customfield_10014 (Epic Name field)
   let epicName = null;
   if (parentType === 'Epic') {
-    epicName = parent.fields?.summary || null;
-  } else if (i.fields.customfield_10014) {
-    // customfield_10014 = Epic Name (string field in some Jira configs)
-    epicName = typeof i.fields.customfield_10014 === 'string' ? i.fields.customfield_10014 : null;
+    epicName = parent.fields?.summary || parent.fields?.issuetype?.name === 'Epic' ? (parent.fields?.summary || null) : null;
+  }
+  // customfield_10014 = Epic Link key (e.g. "U24-1087"), customfield_10015 = Epic Name string
+  // Try both common epic name fields
+  if (!epicName) {
+    const cf14 = i.fields.customfield_10014;
+    const cf15 = i.fields.customfield_10015;
+    if (typeof cf15 === 'string' && cf15) epicName = cf15;
+    else if (typeof cf14 === 'string' && cf14 && !cf14.startsWith('U24-')) epicName = cf14;
   }
   const parentKey = (parentType === 'Story' || parentType === 'Task') ? parent?.key : null;
   // Store full parent info so we can build Story header from sub-task data
@@ -1128,7 +1142,7 @@ function renderAllTasks(si, changes) {
         <span class="sgchev${sgOpen?' open':''}" id="sgc-${sgId}">›</span>
       </div>
       <div class="sg-body${sgOpen?' open':''}" id="sgb-${sgId}">
-        <div class="task-hdr"><span>Тип · Ключ</span><span>Назва</span><span>Епік</span><span>Хто</span><span style="text-align:right;">Est / Rem</span></div>
+        <div style="display:grid;grid-template-columns:80px 1fr 100px 50px 90px;gap:8px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;padding:3px 0 6px;border-bottom:1px solid var(--border);margin-bottom:2px;"><span>Тип · Ключ</span><span>Назва</span><span>Епік</span><span>Хто</span><span style="text-align:right;">Est / Rem</span></div>
         ${rowsHtml}
       </div>
     </div>`;
@@ -1144,7 +1158,7 @@ function taskRowFull(t, si, pid, changes) {
     : `<span class="ttype" style="color:var(--text3);">—</span>`;
   const m = getMember(pid);
   const whoCell = m ? `<span style="font-size:10px;color:var(--text2);">${m.initials}</span>` : `<span style="font-size:10px;color:var(--amber);">?</span>`;
-  return `<div class="task-row${changes?.includes(t.key)?' changed':''}" draggable="true" data-key="${t.key}" data-from="${pid}" data-sprint="${si}">
+  return `<div style="display:grid;grid-template-columns:80px 1fr 100px 50px 90px;gap:8px;align-items:center;padding:5px 4px;border-bottom:1px solid var(--border);border-radius:4px;cursor:grab;user-select:none;transition:background .1s;" class="${changes?.includes(t.key)?'changed':''}" draggable="true" data-key="${t.key}" data-from="${pid}" data-sprint="${si}" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
     <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type,t.typeIconUrl)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a></span>
     <span class="tsum" title="${t.sum}">${t.sum.length>40?t.sum.slice(0,40)+'…':t.sum}</span>
     ${epicCell}
@@ -1162,7 +1176,7 @@ function renderStoryGroupFull(story, subs, si, pid, changes) {
   const m = getMember(pid);
   const whoCell = m ? `<span style="font-size:10px;color:var(--text2);">${m.initials}</span>` : '';
   return `<div class="story-group">
-    <div class="story-header-row" draggable="true" data-key="${story.key}" data-from="${pid}" data-sprint="${si}" onclick="toggleStoryGroup('${gid}',event)">
+    <div style="display:grid;grid-template-columns:80px 1fr 100px 50px 90px;gap:8px;align-items:center;padding:5px 4px;background:var(--bg3);border-radius:5px;cursor:pointer;user-select:none;border:1px solid var(--border);margin-bottom:2px;" draggable="true" data-key="${story.key}" data-from="${pid}" data-sprint="${si}" onclick="toggleStoryGroup('${gid}',event)">
       <span style="display:flex;align-items:center;gap:3px;"><span class="story-chev open" id="schev-${gid}">›</span>${issueTypeIcon(story.type,story.typeIconUrl)}<a href="${cfg.url}/browse/${story.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${story.key}</a></span>
       <span class="tsum" title="${story.sum}">${story.sum.length>40?story.sum.slice(0,40)+'…':story.sum}</span>
       ${storyEpicCell}
@@ -1445,7 +1459,7 @@ function toggleSprintPicker() {
   if (!isOpen) {
     // Populate list
     const openNames = new Set(sprints.map(s=>s.name));
-    const stateLabel = {active:'🟢 Активний', future:'🔵 Майбутній', closed:'⚫ Закритий'};
+    const stateLabel = {active:'🟢 Активний', future:'🔵 Майбутній'};
     picker.innerHTML = allAvailableSprints.length
       ? allAvailableSprints.map(s => `
           <div onclick="addSprintTab('${s.name.replace(/'/g,"\'")}');toggleSprintPicker();"
