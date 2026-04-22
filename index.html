@@ -226,6 +226,11 @@
       <div class="hint">Створи на <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color:var(--blue)">id.atlassian.com</a> → Security → API tokens</div>
     </div>
     <div class="field">
+      <label>Proxy URL <span style="color:var(--text3);font-weight:400;text-transform:none;">(для командного доступу, вирішує CORS)</span></label>
+      <input type="text" id="proxy-url" placeholder="https://capacity-proxy.onrender.com  (або залиш порожнім для локального)">
+      <div class="hint">Деплой proxy з папки <code>capacity-proxy/</code> на Render/Railway. <a href="https://github.com" target="_blank" style="color:var(--blue)">Інструкція в README.md</a></div>
+    </div>
+    <div class="field">
       <label>Jira Project Key</label>
       <input type="text" id="jira-project" placeholder="U24" value="U24">
     </div>
@@ -309,6 +314,10 @@
     <div class="field">
       <label>API Token</label>
       <input type="password" id="s-jira-token" placeholder="залиш порожнім щоб не змінювати">
+    </div>
+    <div class="field">
+      <label>Proxy URL</label>
+      <input type="text" id="s-proxy-url" placeholder="https://capacity-proxy.onrender.com">
     </div>
     <div class="field">
       <label>Project Key</label>
@@ -411,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('jira-url').value = cfg.url || '';
       document.getElementById('jira-email').value = cfg.email || '';
       document.getElementById('jira-project').value = cfg.project || 'U24';
+      document.getElementById('proxy-url').value = cfg.proxyUrl || '';
       document.getElementById('team-list').innerHTML = '';
       cfg.team.forEach(m => addTeamRow(m.name, m.initials, m.role));
     } catch(e) {}
@@ -441,8 +451,9 @@ async function connect() {
     showErr('Заповни всі поля та додай хоча б одного учасника.'); return;
   }
 
-  cfg = { url, email, token, project, team };
-  localStorage.setItem('capacity-cfg', JSON.stringify({url, email, project, team}));
+  const proxyUrl = document.getElementById('proxy-url').value.trim().replace(/\/$/, '');
+  cfg = { url, email, token, project, team, proxyUrl };
+  localStorage.setItem('capacity-cfg', JSON.stringify({url, email, project, team, proxyUrl}));
 
   document.getElementById('btn-connect').disabled = true;
   document.getElementById('btn-connect').textContent = 'Підключення...';
@@ -476,8 +487,24 @@ function jiraHeaders() {
   };
 }
 
+function buildUrl(jiraPath) {
+  const jiraFullUrl = `${cfg.url}/rest/api/3${jiraPath}`;
+  if (cfg.proxyUrl) {
+    return `${cfg.proxyUrl}/proxy?target=${encodeURIComponent(jiraFullUrl)}`;
+  }
+  return jiraFullUrl;
+}
+
+function buildAgileUrl(path) {
+  const jiraFullUrl = `${cfg.url}/rest/agile/1.0${path}`;
+  if (cfg.proxyUrl) {
+    return `${cfg.proxyUrl}/proxy?target=${encodeURIComponent(jiraFullUrl)}`;
+  }
+  return jiraFullUrl;
+}
+
 async function jiraGet(path) {
-  const res = await fetch(`${cfg.url}/rest/api/3${path}`, { headers: jiraHeaders() });
+  const res = await fetch(buildUrl(path), { headers: jiraHeaders() });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Jira API ${res.status}: ${text.slice(0,200)}`);
@@ -486,7 +513,7 @@ async function jiraGet(path) {
 }
 
 async function jiraPut(path, body) {
-  const res = await fetch(`${cfg.url}/rest/api/3${path}`, {
+  const res = await fetch(buildUrl(path), {
     method: 'PUT', headers: jiraHeaders(), body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error(`Jira API ${res.status}`);
@@ -494,7 +521,7 @@ async function jiraPut(path, body) {
 }
 
 async function searchJira(jql, fields, startAt=0, maxResults=100) {
-  const res = await fetch(`${cfg.url}/rest/api/3/search`, {
+  const res = await fetch(buildUrl('/search'), {
     method: 'POST',
     headers: jiraHeaders(),
     body: JSON.stringify({ jql, fields, startAt, maxResults, expand: [] })
@@ -962,7 +989,7 @@ async function applyJira() {
         const spIssue = searchData.issues?.[0];
         const spField = spIssue?.fields?.customfield_10020?.find(s=>s.name===targetSprint.name);
         if (spField?.id) {
-          await fetch(`${cfg.url}/rest/agile/1.0/sprint/${spField.id}/issue`, {
+          await fetch(buildAgileUrl(`/sprint/${spField.id}/issue`), {
             method:'POST', headers: jiraHeaders(),
             body: JSON.stringify({ issues: [c.key] })
           });
@@ -988,6 +1015,7 @@ function openSettings() {
   document.getElementById('s-jira-url').value = cfg.url;
   document.getElementById('s-jira-email').value = cfg.email;
   document.getElementById('s-jira-token').value = '';
+  document.getElementById('s-proxy-url').value = cfg.proxyUrl || '';
   document.getElementById('s-jira-project').value = cfg.project;
   document.getElementById('s-team-list').innerHTML = '';
   cfg.team.forEach(m => addSettingsTeamRow(m.name, m.initials, m.role));
@@ -1001,8 +1029,9 @@ async function saveSettings() {
   cfg.email = document.getElementById('s-jira-email').value.trim();
   cfg.project = document.getElementById('s-jira-project').value.trim().toUpperCase();
   cfg.team = newTeam;
+  cfg.proxyUrl = document.getElementById('s-proxy-url').value.trim().replace(/\/$/, '');
   if (newToken) cfg.token = newToken;
-  localStorage.setItem('capacity-cfg', JSON.stringify({url:cfg.url,email:cfg.email,project:cfg.project,team:cfg.team}));
+  localStorage.setItem('capacity-cfg', JSON.stringify({url:cfg.url,email:cfg.email,project:cfg.project,team:cfg.team,proxyUrl:cfg.proxyUrl}));
   closeSettings();
   await refreshData();
 }
