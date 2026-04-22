@@ -749,6 +749,20 @@ function getChanges() {
 // RENDER
 // ══════════════════════════════════════════════
 let _backlog = [];
+function issueTypeIcon(type) {
+  const icons = {
+    'Bug':         { icon:'🐛', color:'#E24B4A' },
+    'Task':        { icon:'✅', color:'#378ADD' },
+    'Sub-task':    { icon:'↳',  color:'#888780' },
+    'Story':       { icon:'📖', color:'#639922' },
+    'Epic':        { icon:'⚡', color:'#7F77DD' },
+    'Improvement': { icon:'⬆️', color:'#BA7517' },
+    'Spike':       { icon:'🔍', color:'#185FA5' },
+  };
+  const c = icons[type] || { icon:'📌', color:'#888780' };
+  return `<span title="${type}" style="font-size:13px;margin-right:3px;">${c.icon}</span>`;
+}
+
 function priorityBadge(p) {
   const cfg2 = {
     Critical: { icon:'🔴', color:'#A32D2D', bg:'#FCEBEB', border:'#F7C1C1' },
@@ -835,7 +849,7 @@ function renderBacklog() {
         <button class="bfbtn${backlogFilter==='bug'?' active':''}" onclick="setBFilter('bug',this)">Bugs</button>
       </div>
       ${filtered.length ? `
-        <div class="backlog-hdr"><span>Ключ</span><span>Назва</span><span>Тип / Епік</span><span>Пріоритет</span><span>Est / Rem</span><span>Дія</span></div>
+        <div class="backlog-hdr"><span>Тип · Ключ</span><span>Назва</span><span>Епік</span><span>Пріоритет</span><span>Est / Rem</span><span>Дія</span></div>
         ${rows}
       ` : '<div class="no-issues">Немає задач за фільтром</div>'}
     </div>`;
@@ -949,12 +963,12 @@ function renderAll(backlogIssues) {
         </div>
         <div class="person-body open" id="ua-body-${si}">
           <div class="body-inner">
-            <div class="task-hdr"><span>Ключ</span><span>Назва</span><span>Тип / Епік</span><span>Пріоритет</span><span style="text-align:right;">Est / Rem</span></div>
+            <div class="task-hdr"><span>Тип · Ключ</span><span>Назва</span><span>Епік</span><span>Пріоритет</span><span style="text-align:right;">Est / Rem</span></div>
             ${sp.unassigned.map(t => {
               const estRemCell = t.est===0 ? '<span class="no-est">нема</span>' : `<span class="est-rem">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
-              const epicCell = t.epic ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>14?t.epic.slice(0,14)+'…':t.epic}</span>` : `<span class="ttype">${t.type}</span>`;
+              const epicCell = t.epic ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>16?t.epic.slice(0,16)+'…':t.epic}</span>` : `<span class="ttype" style="color:var(--text3);">—</span>`;
               return `<div class="task-row" style="cursor:default;">
-                <a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank">${t.key}</a>
+                <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank">${t.key}</a></span>
                 <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
                 ${epicCell}
                 ${priorityBadge(t.priority)}
@@ -996,12 +1010,12 @@ function renderPerson(si, m, changes) {
         ? `<span class="no-est">нема</span>`
         : `<span class="est-rem" onclick="startEditEst(event,'${t.key}',${si},'${pid}',${t.est},${t.rem})" title="Клік для редагування" style="cursor:pointer;">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
       const epicCell = t.epic
-        ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>14?t.epic.slice(0,14)+'…':t.epic}</span>`
-        : `<span class="ttype">${t.type}</span>`;
+        ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>16?t.epic.slice(0,16)+'…':t.epic}</span>`
+        : `<span class="ttype" style="color:var(--text3);">—</span>`;
       const prioCell = priorityBadge(t.priority);
       return `<div class="task-row${changes.includes(t.key)?' changed':''}" draggable="true"
         data-key="${t.key}" data-from="${pid}" data-sprint="${si}">
-        <a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a>
+        <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a></span>
         <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
         ${epicCell}
         ${prioCell}
@@ -1018,7 +1032,7 @@ function renderPerson(si, m, changes) {
         <span class="sgchev${sgOpen?' open':''}" id="sgc-${sgId}">›</span>
       </div>
       <div class="sg-body${sgOpen?' open':''}" id="sgb-${sgId}">
-        <div class="task-hdr"><span>Ключ</span><span>Назва</span><span>Тип / Епік</span><span>Пріоритет</span><span style="text-align:right;">Est / Rem</span></div>
+        <div class="task-hdr"><span>Тип · Ключ</span><span>Назва</span><span>Епік</span><span>Пріоритет</span><span style="text-align:right;">Est / Rem</span></div>
         ${rows}
       </div>
     </div>`;
