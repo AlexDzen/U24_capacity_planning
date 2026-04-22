@@ -642,8 +642,10 @@ function parseIssue(i) {
     type: i.fields.issuetype.name,
     typeIconUrl: i.fields.issuetype.iconUrl || '',
     status: i.fields.status.name,
-    rem: Math.round((i.fields.timeestimate || 0) / 360) / 10,
     est: Math.round((i.fields.timeoriginalestimate || 0) / 360) / 10,
+    rem: i.fields.timeestimate > 0
+      ? Math.round(i.fields.timeestimate / 360) / 10
+      : Math.round((i.fields.timeoriginalestimate || 0) / 360) / 10,
     sum: i.fields.summary,
     priority: i.fields.priority?.name || 'Medium',
     epic: epicName,
@@ -1036,6 +1038,7 @@ function renderPerson(si, m, changes) {
     const sgRem = list.reduce((s,t)=>s+t.rem,0);
     // Group tasks: stories with their sub-tasks
     const taskRow = (t, indent=false) => {
+      const hasRem = t.rem !== t.est || t.est === 0;
       const estRemCell = t.est===0
         ? `<span class="no-est">нема</span>`
         : `<span class="est-rem" data-key="${t.key}" data-si="${si}" data-pid="${pid}" data-est="${t.est}" data-rem="${t.rem}" onclick="startEditEst(this)" title="Клік для редагування" style="cursor:pointer;">${t.est}г <span class="rem">/ ${t.rem}г</span></span>`;
@@ -1254,7 +1257,7 @@ function updateLoadBar(si, pid) {
   const pl=document.querySelector(`#pb-${si}-${pid} .pct-lbl`);
   if(pl){pl.textContent=pct+'%';pl.style.color=bc;}
   const rl=document.querySelector(`#pb-${si}-${pid} .rem-lbl`);
-  if(rl) rl.textContent=`${rem}г/${cap}г`;
+  if(rl) rl.textContent=`${rem}г / ${cap}г`;
 }
 
 function updateSprintSum(si) {
