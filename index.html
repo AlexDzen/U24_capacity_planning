@@ -160,6 +160,14 @@
   .est-rem { font-size:11px; color:var(--text2); white-space:nowrap; text-align:right; display:block; }
   .est-rem .rem { color:var(--text3); }
   .est-edit { font-size:11px; border:1px solid var(--blue); border-radius:4px; padding:1px 4px; width:52px; outline:none; }
+  /* Story grouping */
+  .story-group { margin-bottom:4px; }
+  .story-header-row { display:grid; grid-template-columns:80px 1fr 100px 100px 90px; gap:8px; align-items:center; padding:5px 4px; background:var(--bg3); border-radius:5px; cursor:pointer; user-select:none; border:1px solid var(--border); }
+  .story-header-row:hover { background:#e8e8e4; }
+  .story-subtasks { padding-left:16px; border-left:2px solid var(--purple-bg); margin-left:12px; margin-top:2px; margin-bottom:4px; }
+  .story-chev { font-size:12px; color:var(--text3); transition:transform .15s; }
+  .story-chev.open { transform:rotate(90deg); }
+
   /* Unassigned section */
   .unassigned-block { border:1px dashed var(--amber-border); border-radius:var(--radius); margin-bottom:8px; background:var(--amber-bg)08; }
   .unassigned-head { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; }
@@ -626,18 +634,32 @@ async function getActiveSprints() {
 
 function parseIssue(i) {
   const parent = i.fields.parent;
-  const epicName = parent?.fields?.issuetype?.name === 'Epic' ? parent.fields.summary : null;
+  const parentType = parent?.fields?.issuetype?.name;
+  const epicName = parentType === 'Epic' ? parent.fields.summary : null;
+  const parentKey = (parentType === 'Story' || parentType === 'Task') ? parent?.key : null;
   return {
     key: i.key,
     type: i.fields.issuetype.name,
+    typeIconUrl: i.fields.issuetype.iconUrl || '',
     status: i.fields.status.name,
     rem: Math.round((i.fields.timeestimate || 0) / 360) / 10,
     est: Math.round((i.fields.timeoriginalestimate || 0) / 360) / 10,
     sum: i.fields.summary,
     priority: i.fields.priority?.name || 'Medium',
     epic: epicName,
+    parentKey: parentKey,
     assignee: i.fields.assignee?.displayName || null,
   };
+}
+
+function toggleStoryGroup(gid, e) {
+  if (e.target.closest('a') || e.target.closest('.est-rem')) return;
+  const body = document.getElementById('sgroup-' + gid);
+  const chev = document.getElementById('schev-' + gid);
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  chev?.classList.toggle('open', !isOpen);
 }
 
 async function loadData() {
@@ -749,18 +771,13 @@ function getChanges() {
 // RENDER
 // ══════════════════════════════════════════════
 let _backlog = [];
-function issueTypeIcon(type) {
-  const icons = {
-    'Bug':         { icon:'🐛', color:'#E24B4A' },
-    'Task':        { icon:'✅', color:'#378ADD' },
-    'Sub-task':    { icon:'↳',  color:'#888780' },
-    'Story':       { icon:'📖', color:'#639922' },
-    'Epic':        { icon:'⚡', color:'#7F77DD' },
-    'Improvement': { icon:'⬆️', color:'#BA7517' },
-    'Spike':       { icon:'🔍', color:'#185FA5' },
-  };
-  const c = icons[type] || { icon:'📌', color:'#888780' };
-  return `<span title="${type}" style="font-size:13px;margin-right:3px;">${c.icon}</span>`;
+function issueTypeIcon(type, iconUrl) {
+  if (iconUrl) {
+    return `<img src="${iconUrl}" title="${type}" style="width:14px;height:14px;margin-right:3px;vertical-align:middle;flex-shrink:0;" onerror="this.style.display='none'">`;
+  }
+  // Fallback emoji if no iconUrl
+  const icons = {'Bug':'🐛','Task':'✅','Sub-task':'↳','Story':'📖','Epic':'⚡','Improvement':'⬆️','Spike':'🔍','Art':'🎨'};
+  return `<span title="${type}" style="font-size:13px;margin-right:3px;">${icons[type]||'📌'}</span>`;
 }
 
 function priorityBadge(p) {
@@ -784,31 +801,43 @@ function toggleUA(si) {
 }
 
 let editingEst = null;
-function startEditEst(e, key, si, pid, est, rem) {
-  e.stopPropagation(); e.preventDefault();
+function startEditEst(span) {
   if (editingEst) return;
-  const span = e.currentTarget;
+  const key = span.dataset.key;
+  const si = parseInt(span.dataset.si);
+  const pid = span.dataset.pid;
+  const est = parseFloat(span.dataset.est);
+  const rem = parseFloat(span.dataset.rem);
   editingEst = key;
-  const orig = span.innerHTML;
-  span.innerHTML = `<input class="est-edit" type="number" min="0" step="0.5" value="${est}" onblur="saveEst(event,'${key}',${si},'${pid}')" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.parentElement.innerHTML='${orig}';editingEst=null;}">`;
-  span.querySelector('input').focus();
-  span.querySelector('input').select();
+  const origText = `${est}г <span class="rem">/ ${rem}г</span>`;
+  span.innerHTML = `<input class="est-edit" type="number" min="0" step="0.5" value="${est}">`;
+  const input = span.querySelector('input');
+  input.focus();
+  input.select();
+  input.addEventListener('blur', () => saveEst(input, key, si, pid, span, origText));
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') input.blur();
+    if (ev.key === 'Escape') { span.innerHTML = origText; editingEst = null; }
+  });
 }
-async function saveEst(e, key, si, pid) {
-  const val = parseFloat(e.target.value) || 0;
+async function saveEst(input, key, si, pid, span, origText) {
+  if (!editingEst) return;
+  const val = parseFloat(input.value) || 0;
   const secs = Math.round(val * 3600);
   editingEst = null;
   // Update local state
   const task = sprints[si]?.tasks[pid]?.find(t=>t.key===key);
-  if (task) { task.est = val; task.rem = val; }
+  if (task) { task.est = val; task.rem = val; span.dataset.est = val; span.dataset.rem = val; }
+  // Restore display immediately
+  span.innerHTML = `${val}г <span class="rem">/ ${val}г</span>`;
   // Save to Jira
   try {
     await jiraPut(`/issue/${key}`, { fields: { timeoriginalestimate: secs, timeestimate: secs } });
     showNotice(`✓ Естімейт ${key} оновлено: ${val}г`, 'ok');
   } catch(err) {
     showNotice(`Помилка збереження: ${err.message}`, 'err');
+    span.innerHTML = origText;
   }
-  renderAll();
 }
 
 let backlogFilter = 'all';
@@ -968,7 +997,7 @@ function renderAll(backlogIssues) {
               const estRemCell = t.est===0 ? '<span class="no-est">нема</span>' : `<span class="est-rem">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
               const epicCell = t.epic ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>16?t.epic.slice(0,16)+'…':t.epic}</span>` : `<span class="ttype" style="color:var(--text3);">—</span>`;
               return `<div class="task-row" style="cursor:default;">
-                <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank">${t.key}</a></span>
+                <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type,t.typeIconUrl)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank">${t.key}</a></span>
                 <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
                 ${epicCell}
                 ${priorityBadge(t.priority)}
@@ -1005,23 +1034,69 @@ function renderPerson(si, m, changes) {
     if (!(sgId in openStatuses)) openStatuses[sgId] = true;
     const sgOpen = openStatuses[sgId];
     const sgRem = list.reduce((s,t)=>s+t.rem,0);
-    const rows = list.map(t => {
+    // Group tasks: stories with their sub-tasks
+    const taskRow = (t, indent=false) => {
       const estRemCell = t.est===0
         ? `<span class="no-est">нема</span>`
-        : `<span class="est-rem" onclick="startEditEst(event,'${t.key}',${si},'${pid}',${t.est},${t.rem})" title="Клік для редагування" style="cursor:pointer;">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
+        : `<span class="est-rem" data-key="${t.key}" data-si="${si}" data-pid="${pid}" data-est="${t.est}" data-rem="${t.rem}" onclick="startEditEst(this)" title="Клік для редагування" style="cursor:pointer;">${t.est}г <span class="rem">/ ${t.rem}г</span></span>`;
       const epicCell = t.epic
         ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>16?t.epic.slice(0,16)+'…':t.epic}</span>`
         : `<span class="ttype" style="color:var(--text3);">—</span>`;
       const prioCell = priorityBadge(t.priority);
       return `<div class="task-row${changes.includes(t.key)?' changed':''}" draggable="true"
         data-key="${t.key}" data-from="${pid}" data-sprint="${si}">
-        <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a></span>
+        <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type,t.typeIconUrl)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a></span>
         <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
         ${epicCell}
         ${prioCell}
         ${estRemCell}
       </div>`;
+    };
+
+    // Separate stories and their subtasks
+    const stories = list.filter(t => t.type === 'Story');
+    const storyKeys = new Set(stories.map(t => t.key));
+    const subtasksByParent = {};
+    const orphans = [];
+    list.forEach(t => {
+      if (t.type === 'Sub-task' && t.parentKey && storyKeys.has(t.parentKey)) {
+        if (!subtasksByParent[t.parentKey]) subtasksByParent[t.parentKey] = [];
+        subtasksByParent[t.parentKey].push(t);
+      } else if (t.type !== 'Story') {
+        orphans.push(t);
+      }
+    });
+
+    const sgUid = `sg-${si}-${pid}-${status.replace(/\s/g,'_')}`;
+    let storyGroupIdx = 0;
+    const storyGroupHtml = stories.map(story => {
+      const subs = subtasksByParent[story.key] || [];
+      const storyRem = story.rem + subs.reduce((s,t)=>s+t.rem,0);
+      const storyEst = story.est + subs.reduce((s,t)=>s+t.est,0);
+      const gid = `${sgUid}-${storyGroupIdx++}`;
+      const storyEstCell = story.est===0
+        ? `<span class="no-est">нема</span>`
+        : `<span class="est-rem">${storyEst}г <span class="rem">/ ${storyRem}г</span></span>`;
+      const storyEpicCell = story.epic
+        ? `<span class="epic-tag" title="${story.epic}">${story.epic.length>16?story.epic.slice(0,16)+'…':story.epic}</span>`
+        : `<span class="ttype" style="color:var(--text3);">—</span>`;
+      return `<div class="story-group">
+        <div class="story-header-row" draggable="true" data-key="${story.key}" data-from="${pid}" data-sprint="${si}" onclick="toggleStoryGroup('${gid}',event)">
+          <span style="display:flex;align-items:center;gap:3px;"><span class="story-chev open" id="schev-${gid}">›</span>${issueTypeIcon(story.type,story.typeIconUrl)}<a href="${cfg.url}/browse/${story.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${story.key}</a></span>
+          <span class="tsum" title="${story.sum}">${story.sum.length>45?story.sum.slice(0,45)+'…':story.sum}</span>
+          ${storyEpicCell}
+          ${priorityBadge(story.priority)}
+          ${storyEstCell}
+        </div>
+        <div id="sgroup-${gid}" style="display:block;">
+          <div class="story-subtasks">
+            ${subs.map(t => taskRow(t)).join('')}
+          </div>
+        </div>
+      </div>`;
     }).join('');
+
+    const rows = storyGroupHtml + orphans.map(t => taskRow(t)).join('');
 
     return `<div class="sg" style="border-color:${sd.color}33;">
       <div class="sg-head" style="background:${sd.bg};" onclick="toggleSg('${sgId}')">
