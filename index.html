@@ -637,6 +637,16 @@ function parseIssue(i) {
   const parentType = parent?.fields?.issuetype?.name;
   const epicName = parentType === 'Epic' ? parent.fields.summary : null;
   const parentKey = (parentType === 'Story' || parentType === 'Task') ? parent?.key : null;
+  // Store full parent info so we can build Story header from sub-task data
+  const parentInfo = parentKey ? {
+    key: parent.key,
+    sum: parent.fields?.summary || '',
+    type: parentType,
+    typeIconUrl: parent.fields?.issuetype?.iconUrl || '',
+    priority: i.fields.priority?.name || 'Medium',
+    epic: null,
+    est: 0, rem: 0,
+  } : null;
   return {
     key: i.key,
     type: i.fields.issuetype.name,
@@ -650,6 +660,7 @@ function parseIssue(i) {
     priority: i.fields.priority?.name || 'Medium',
     epic: epicName,
     parentKey: parentKey,
+    parentInfo: parentInfo,
     assignee: i.fields.assignee?.displayName || null,
   };
 }
@@ -1056,15 +1067,12 @@ function renderPerson(si, m, changes) {
       </div>`;
     };
 
-    // Get ALL tasks for this person (across all statuses) to find story-subtask relationships
-    const allPersonTasks = sprints[si]?.tasks[pid] || [];
-    const allStoryKeys = new Set(allPersonTasks.filter(t=>t.type==='Story').map(t=>t.key));
-
-    // Separate this status group
+    // Separate this status group by type
     const stories = list.filter(t => t.type === 'Story');
+    const storyKeys = new Set(stories.map(t => t.key));
     const subtasksByParent = {};
     const bugs = [];
-    const others = []; // Tasks, Improvement, Spike, Art, etc.
+    const others = [];
 
     list.forEach(t => {
       if (t.type === 'Sub-task' && t.parentKey) {
@@ -1077,14 +1085,14 @@ function renderPerson(si, m, changes) {
       }
     });
 
-    // Also check if sub-tasks whose parent Story is in ANOTHER status group
-    const orphanSubtasks = list.filter(t =>
-      t.type === 'Sub-task' && t.parentKey && !stories.find(s=>s.key===t.parentKey)
-    );
-
-    // Find parent stories for orphan subtasks (from other status groups)
-    const parentStoryKeys = [...new Set(orphanSubtasks.map(t=>t.parentKey).filter(Boolean))];
-    const parentStories = allPersonTasks.filter(t => parentStoryKeys.includes(t.key));
+    // Sub-tasks whose parent Story is NOT in this person's task list (story assigned to someone else)
+    // Build virtual story headers from parentInfo stored in sub-tasks
+    const virtualStories = {};
+    list.forEach(t => {
+      if (t.type === 'Sub-task' && t.parentKey && !storyKeys.has(t.parentKey) && t.parentInfo) {
+        if (!virtualStories[t.parentKey]) virtualStories[t.parentKey] = t.parentInfo;
+      }
+    });
 
     const sgUid = `sg-${si}-${pid}-${status.replace(/\s/g,'_')}`;
     let storyGroupIdx = 0;
@@ -1121,14 +1129,14 @@ function renderPerson(si, m, changes) {
       return renderStoryGroup(story, subs);
     }).join('');
 
-    // Orphan subtasks grouped under a "ghost" story header (parent from another status)
-    const orphanGroupHtml = parentStories.map(story => {
-      const subs = orphanSubtasks.filter(t=>t.parentKey===story.key);
+    // Virtual story headers for sub-tasks whose parent is assigned to someone else
+    const virtualGroupHtml = Object.values(virtualStories).map(story => {
+      const subs = (subtasksByParent[story.key] || []);
       if (!subs.length) return '';
       return renderStoryGroup(story, subs);
     }).join('');
 
-    const rows = storyGroupHtml + orphanGroupHtml
+    const rows = storyGroupHtml + virtualGroupHtml
       + others.map(t => taskRow(t)).join('')
       + bugs.map(t => taskRow(t)).join('');
 
