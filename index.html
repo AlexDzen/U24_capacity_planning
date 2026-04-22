@@ -673,20 +673,16 @@ function parseIssue(i) {
   const parent = i.fields.parent;
   const parentType = parent?.fields?.issuetype?.name;
   // Epic resolution:
-  // - Sub-task: parent is Story/Task → epic comes from Story's parent (not available here, skip)
-  // - Story/Task: parent IS the Epic → use parent.fields.summary
-  // - Story/Task: parent.fields might be minimal → also try customfield_10014 (Epic Name field)
+  // parent.fields.issuetype.name tells us the type of parent
+  // If parentType === 'Epic' → parent.fields.summary is the epic name
+  // cf10014 = Epic Link key (e.g. "U24-1087"), cf10015 = Epic Name string (null in this Jira)
   let epicName = null;
-  if (parentType === 'Epic') {
-    epicName = parent.fields?.summary || parent.fields?.issuetype?.name === 'Epic' ? (parent.fields?.summary || null) : null;
+  if (parentType === 'Epic' && parent.fields?.summary) {
+    epicName = parent.fields.summary;
   }
-  // customfield_10014 = Epic Link key (e.g. "U24-1087"), customfield_10015 = Epic Name string
-  // Try both common epic name fields
   if (!epicName) {
-    const cf14 = i.fields.customfield_10014;
     const cf15 = i.fields.customfield_10015;
     if (typeof cf15 === 'string' && cf15) epicName = cf15;
-    else if (typeof cf14 === 'string' && cf14 && !cf14.startsWith('U24-')) epicName = cf14;
   }
   const parentKey = (parentType === 'Story' || parentType === 'Task') ? parent?.key : null;
   // Store full parent info so we can build Story header from sub-task data
