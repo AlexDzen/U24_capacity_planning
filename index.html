@@ -302,11 +302,16 @@
           <span id="tab-name-1">Sprint 2</span>
           <span class="tab-pct" id="tab-pct-1"></span>
         </div>
+        <div class="tab" id="tab-backlog" onclick="switchTab('backlog')">
+          <span>Backlog</span>
+          <span class="tab-pct" id="tab-pct-backlog" style="color:var(--text3);"></span>
+        </div>
         <span class="tab-hint">← перетягни задачу на вкладку для переносу між спринтами</span>
       </div>
       <div class="tab-line"></div>
       <div class="sprint-panel active" id="panel-0"></div>
       <div class="sprint-panel" id="panel-1"></div>
+      <div class="sprint-panel" id="panel-backlog"></div>
     </div>
   </div>
 </div>
@@ -569,7 +574,7 @@ const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeor
 
 async function fetchPersonIssues(sprintName, personName) {
   const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
-  const data = await searchJira(jql, FIELDS);
+  const data = await searchJira(jql, [...FIELDS, 'parent']);
   return data.issues || [];
 }
 
@@ -984,13 +989,20 @@ function renderPerson(si, m, changes) {
     const sgOpen = openStatuses[sgId];
     const sgRem = list.reduce((s,t)=>s+t.rem,0);
     const rows = list.map(t => {
-      const remCell = t.est===0 ? `<span class="no-est">нема</span>` : `<span class="trem">${t.rem}г</span>`;
+      const estRemCell = t.est===0
+        ? `<span class="no-est">нема</span>`
+        : `<span class="est-rem" onclick="startEditEst(event,'${t.key}',${si},'${pid}',${t.est},${t.rem})" title="Клік для редагування" style="cursor:pointer;">${t.est}г<span class="rem"> / ${t.rem}г</span></span>`;
+      const epicCell = t.epic
+        ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>14?t.epic.slice(0,14)+'…':t.epic}</span>`
+        : `<span class="ttype">${t.type}</span>`;
+      const prioCell = priorityBadge(t.priority);
       return `<div class="task-row${changes.includes(t.key)?' changed':''}" draggable="true"
         data-key="${t.key}" data-from="${pid}" data-sprint="${si}">
         <a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a>
-        <span class="tsum" title="${t.sum}">${t.sum.length>50?t.sum.slice(0,50)+'…':t.sum}</span>
-        <span class="ttype">${t.type}</span>
-        ${remCell}
+        <span class="tsum" title="${t.sum}">${t.sum.length>45?t.sum.slice(0,45)+'…':t.sum}</span>
+        ${epicCell}
+        ${prioCell}
+        ${estRemCell}
       </div>`;
     }).join('');
 
