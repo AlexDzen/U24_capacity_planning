@@ -1056,24 +1056,40 @@ function renderPerson(si, m, changes) {
       </div>`;
     };
 
-    // Separate stories and their subtasks
+    // Get ALL tasks for this person (across all statuses) to find story-subtask relationships
+    const allPersonTasks = sprints[si]?.tasks[pid] || [];
+    const allStoryKeys = new Set(allPersonTasks.filter(t=>t.type==='Story').map(t=>t.key));
+
+    // Separate this status group
     const stories = list.filter(t => t.type === 'Story');
-    const storyKeys = new Set(stories.map(t => t.key));
     const subtasksByParent = {};
-    const orphans = [];
+    const bugs = [];
+    const others = []; // Tasks, Improvement, Spike, Art, etc.
+
     list.forEach(t => {
-      if (t.type === 'Sub-task' && t.parentKey && storyKeys.has(t.parentKey)) {
+      if (t.type === 'Sub-task' && t.parentKey) {
         if (!subtasksByParent[t.parentKey]) subtasksByParent[t.parentKey] = [];
         subtasksByParent[t.parentKey].push(t);
+      } else if (t.type === 'Bug') {
+        bugs.push(t);
       } else if (t.type !== 'Story') {
-        orphans.push(t);
+        others.push(t);
       }
     });
 
+    // Also check if sub-tasks whose parent Story is in ANOTHER status group
+    const orphanSubtasks = list.filter(t =>
+      t.type === 'Sub-task' && t.parentKey && !stories.find(s=>s.key===t.parentKey)
+    );
+
+    // Find parent stories for orphan subtasks (from other status groups)
+    const parentStoryKeys = [...new Set(orphanSubtasks.map(t=>t.parentKey).filter(Boolean))];
+    const parentStories = allPersonTasks.filter(t => parentStoryKeys.includes(t.key));
+
     const sgUid = `sg-${si}-${pid}-${status.replace(/\s/g,'_')}`;
     let storyGroupIdx = 0;
-    const storyGroupHtml = stories.map(story => {
-      const subs = subtasksByParent[story.key] || [];
+
+    const renderStoryGroup = (story, subs) => {
       const storyRem = story.rem + subs.reduce((s,t)=>s+t.rem,0);
       const storyEst = story.est + subs.reduce((s,t)=>s+t.est,0);
       const gid = `${sgUid}-${storyGroupIdx++}`;
@@ -1086,7 +1102,7 @@ function renderPerson(si, m, changes) {
       return `<div class="story-group">
         <div class="story-header-row" draggable="true" data-key="${story.key}" data-from="${pid}" data-sprint="${si}" onclick="toggleStoryGroup('${gid}',event)">
           <span style="display:flex;align-items:center;gap:3px;"><span class="story-chev open" id="schev-${gid}">›</span>${issueTypeIcon(story.type,story.typeIconUrl)}<a href="${cfg.url}/browse/${story.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${story.key}</a></span>
-          <span class="tsum" title="${story.sum}">${story.sum.length>45?story.sum.slice(0,45)+'…':story.sum}</span>
+          <span class="tsum" title="${story.sum}">${story.sum.length>40?story.sum.slice(0,40)+'…':story.sum}</span>
           ${storyEpicCell}
           ${priorityBadge(story.priority)}
           ${storyEstCell}
@@ -1097,9 +1113,24 @@ function renderPerson(si, m, changes) {
           </div>
         </div>
       </div>`;
+    };
+
+    // ORDER: 1) Stories with their subtasks, 2) Orphan subtasks under their parent story header, 3) Tasks/Others, 4) Bugs
+    const storyGroupHtml = stories.map(story => {
+      const subs = subtasksByParent[story.key] || [];
+      return renderStoryGroup(story, subs);
     }).join('');
 
-    const rows = storyGroupHtml + orphans.map(t => taskRow(t)).join('');
+    // Orphan subtasks grouped under a "ghost" story header (parent from another status)
+    const orphanGroupHtml = parentStories.map(story => {
+      const subs = orphanSubtasks.filter(t=>t.parentKey===story.key);
+      if (!subs.length) return '';
+      return renderStoryGroup(story, subs);
+    }).join('');
+
+    const rows = storyGroupHtml + orphanGroupHtml
+      + others.map(t => taskRow(t)).join('')
+      + bugs.map(t => taskRow(t)).join('');
 
     return `<div class="sg" style="border-color:${sd.color}33;">
       <div class="sg-head" style="background:${sd.bg};" onclick="toggleSg('${sgId}')">
