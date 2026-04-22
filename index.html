@@ -1043,7 +1043,9 @@ function renderAll(backlogIssues) {
       </div>`;
     }).join('');
 
-    const personsHtml = cfg.team.map(m => renderPerson(si, m, changes)).join('');
+    const personsHtml = groupByPerson
+      ? cfg.team.map(m => renderPerson(si, m, changes)).join('')
+      : renderAllTasks(si, changes);
 
     document.getElementById(`panel-${si}`).innerHTML = `
       <div class="sprint-header">
