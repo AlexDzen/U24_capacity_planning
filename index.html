@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sprint Capacity Planning — U24</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230057B8'/%3E%3Ctext x='16' y='22' font-family='Arial Black,Arial' font-weight='900' font-size='14' fill='%23FFD700' text-anchor='middle'%3EU24%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --green: #639922; --yellow: #BA7517; --red: #E24B4a;
@@ -277,7 +278,16 @@
 <!-- ════════════════ APP ════════════════ -->
 <div id="app">
   <div class="app-header">
-    <div class="app-logo">📊 Capacity Planning</div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <rect width="32" height="32" rx="6" fill="#0057B8"/>
+        <text x="16" y="22" font-family="Arial Black,Arial" font-weight="900" font-size="14" fill="#FFD700" text-anchor="middle">U24</text>
+      </svg>
+      <div>
+        <div class="app-logo" style="line-height:1.1;">Capacity Planning</div>
+        <div style="font-size:10px;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;">United24 · Sprint Board</div>
+      </div>
+    </div>
     <div class="app-project" id="header-project">U24</div>
     <div class="header-actions">
       <button class="fbtn active" onclick="setFilter('all',this)">Усі</button>
