@@ -296,6 +296,7 @@
       <button class="fbtn" id="tog-btn" onclick="toggleAll()">Згорнути всіх</button>
       <button class="refresh-btn" onclick="refreshData()" title="Перезавантажити дані з Jira">↻ Оновити</button>
       <button class="settings-btn" onclick="openSettings()">⚙ Налаштування</button>
+      <button class="tog" id="group-toggle" onclick="toggleGroupBy()" title="Перемикач: по людях / весь скоуп">👤 По людях</button>
       <button class="jbtn" id="jbtn" onclick="openModal()">Застосувати в Jira</button>
     </div>
   </div>
@@ -319,6 +320,11 @@
         <div class="tab" id="tab-backlog" onclick="switchTab('backlog')">
           <span>Backlog</span>
           <span class="tab-pct" id="tab-pct-backlog" style="color:var(--text3);"></span>
+        </div>
+        <div style="position:relative;display:inline-block;" id="sprint-picker-wrap">
+          <button class="tog" onclick="toggleSprintPicker()" title="Додати спринт" style="padding:4px 10px;font-size:13px;">+ Спринт</button>
+          <div id="sprint-picker" style="display:none;position:absolute;top:110%;left:0;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:220px;max-height:260px;overflow-y:auto;z-index:50;padding:4px 0;">
+          </div>
         </div>
         <span class="tab-hint">← перетягни задачу на вкладку для переносу між спринтами</span>
       </div>
@@ -416,12 +422,14 @@ let cfg = {
 };
 
 let sprints = []; // [{id,name,dates,goal,tasks:{personId:[...]}}]
+let allAvailableSprints = []; // all project sprints for picker
 let sprintDays = [];
 let vacDays = [];
 let openPersons = [];
 let openStatuses = {};
 let allExpanded = true;
 let currentFilter = 'all';
+let groupByPerson = true;
 let currentTab = 0;
 let dragKey = null, dragFrom = null, dragFromSprint = null;
 let orig = {}; // key → {sprint,person}
@@ -584,7 +592,7 @@ async function searchJira(jql, fields, startAt=0, maxResults=100) {
   return res.json();
 }
 
-const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority'];
+const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority','customfield_10014'];
 
 async function fetchPersonIssues(sprintName, personName) {
   const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
@@ -611,6 +619,18 @@ async function fetchSprintMeta(sprintName) {
   if (!issue) return null;
   const sf = (issue.fields.customfield_10020 || []).find(s => s.name === sprintName);
   return sf || null;
+}
+
+async function fetchAllSprints() {
+  // Get all sprints for project (active + future + recent closed)
+  const jql = `project = ${cfg.project} AND sprint is not EMPTY ORDER BY created DESC`;
+  const data = await searchJira(jql, ['customfield_10020'], 0, 1);
+  const issue = data.issues?.[0];
+  if (!issue) return [];
+  const all = issue.fields.customfield_10020 || [];
+  // Sort: active first, then future, then closed by date
+  const order = {active:0, future:1, closed:2};
+  return all.sort((a,b) => (order[a.state]||2) - (order[b.state]||2) || new Date(b.startDate||0) - new Date(a.startDate||0));
 }
 
 async function getActiveSprints() {
@@ -645,7 +665,15 @@ async function getActiveSprints() {
 function parseIssue(i) {
   const parent = i.fields.parent;
   const parentType = parent?.fields?.issuetype?.name;
-  const epicName = parentType === 'Epic' ? parent.fields.summary : null;
+  // For Sub-tasks: parent is Story/Task, epic is grandparent
+  // For Story/Task: parent is Epic directly, OR use customfield_10014 (Epic Link name)
+  let epicName = null;
+  if (parentType === 'Epic') {
+    epicName = parent.fields?.summary || null;
+  } else if (i.fields.customfield_10014) {
+    // customfield_10014 = Epic Name (string field in some Jira configs)
+    epicName = typeof i.fields.customfield_10014 === 'string' ? i.fields.customfield_10014 : null;
+  }
   const parentKey = (parentType === 'Story' || parentType === 'Task') ? parent?.key : null;
   // Store full parent info so we can build Story header from sub-task data
   const parentInfo = parentKey ? {
@@ -687,6 +715,8 @@ function toggleStoryGroup(gid, e) {
 
 async function loadData() {
   setLoading(true, 'Знаходимо активні спринти...');
+  // Load all sprints for picker (background)
+  try { allAvailableSprints = await fetchAllSprints(); } catch(e) { console.warn('fetchAllSprints:', e); }
 
   // Get all sprints for project
   const allSprints = await getActiveSprints();
@@ -1037,6 +1067,114 @@ function renderAll(backlogIssues) {
   document.getElementById('jbtn').classList.toggle('dirty', getChanges().length>0);
 }
 
+function renderAllTasks(si, changes) {
+  // Show all tasks grouped by status, without person breakdown
+  const allTasks = cfg.team.flatMap(m => sprints[si].tasks[memberKey(m)] || []).filter(filterT);
+  const unassigned = (sprints[si].unassigned || []).filter(filterT);
+  const all = [...allTasks, ...unassigned];
+
+  const groups = {};
+  all.forEach(t => { if(!groups[t.status]) groups[t.status]=[]; groups[t.status].push(t); });
+  const sorted = STATUS_ORDER.filter(s=>groups[s]).map(s=>([s,groups[s]]));
+
+  if (!sorted.length) return `<div style="font-size:12px;color:var(--text3);text-align:center;padding:2rem;">Немає задач</div>`;
+
+  return sorted.map(([status, list]) => {
+    const sd = SC[status]||{color:'#888',bg:'#f5f5f5'};
+    const sgId = `all-${si}-${status.replace(/\s/g,'_')}`;
+    if(!(sgId in openStatuses)) openStatuses[sgId]=true;
+    const sgOpen = openStatuses[sgId];
+    const sgRem = list.reduce((s,t)=>s+t.rem,0);
+
+    // Sort: stories+subtasks first, then tasks, then bugs
+    const stories = list.filter(t=>t.type==='Story');
+    const storyKeys = new Set(stories.map(t=>t.key));
+    const subs = {}, bugs = [], others = [], virtualStories = {};
+    list.forEach(t => {
+      if(t.type==='Sub-task' && t.parentKey) {
+        if(!subs[t.parentKey]) subs[t.parentKey]=[];
+        subs[t.parentKey].push(t);
+        if(!storyKeys.has(t.parentKey) && t.parentInfo) virtualStories[t.parentKey]=t.parentInfo;
+      } else if(t.type==='Bug') bugs.push(t);
+      else if(t.type!=='Story') others.push(t);
+    });
+
+    const dummy = {key:'_',pid:'_',si};
+    const rowsHtml = [
+      ...stories.map(story => {
+        const pid = cfg.team.map(m=>memberKey(m)).find(p=>sprints[si].tasks[p]?.find(t=>t.key===story.key)) || '_';
+        return renderStoryGroupFull(story, subs[story.key]||[], si, pid, changes);
+      }),
+      ...Object.values(virtualStories).map(story => {
+        const pid = cfg.team.map(m=>memberKey(m)).find(p=>sprints[si].tasks[p]?.find(t=>t.parentKey===story.key)) || '_';
+        return renderStoryGroupFull(story, subs[story.key]||[], si, pid, changes);
+      }),
+      ...others.map(t => {
+        const pid = cfg.team.map(m=>memberKey(m)).find(p=>sprints[si].tasks[p]?.find(tt=>tt.key===t.key)) || '_';
+        return taskRowFull(t, si, pid, changes);
+      }),
+      ...bugs.map(t => {
+        const pid = cfg.team.map(m=>memberKey(m)).find(p=>sprints[si].tasks[p]?.find(tt=>tt.key===t.key)) || '_';
+        return taskRowFull(t, si, pid, changes);
+      }),
+    ].join('');
+
+    return `<div class="sg" style="border-color:${sd.color}22;">
+      <div class="sg-head" style="background:${sd.bg};" onclick="toggleSg('${sgId}')">
+        <div class="sdot" style="background:${sd.color};"></div>
+        <span class="sname" style="color:${sd.color};">${status}</span>
+        <span class="scount">${list.length}</span>
+        ${sgRem>0?`<span class="srem" style="color:${sd.color};">${Math.round(sgRem*10)/10}г</span>`:''}
+        <span class="sgchev${sgOpen?' open':''}" id="sgc-${sgId}">›</span>
+      </div>
+      <div class="sg-body${sgOpen?' open':''}" id="sgb-${sgId}">
+        <div class="task-hdr"><span>Тип · Ключ</span><span>Назва</span><span>Епік</span><span>Хто</span><span style="text-align:right;">Est / Rem</span></div>
+        ${rowsHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function taskRowFull(t, si, pid, changes) {
+  const estRemCell = t.est===0
+    ? `<span class="no-est">нема</span>`
+    : `<span class="est-rem" data-key="${t.key}" data-si="${si}" data-pid="${pid}" data-est="${t.est}" data-rem="${t.rem}" onclick="startEditEst(this)" title="Клік" style="cursor:pointer;">${t.est}г <span class="rem">/ ${t.rem}г</span></span>`;
+  const epicCell = t.epic
+    ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>12?t.epic.slice(0,12)+'…':t.epic}</span>`
+    : `<span class="ttype" style="color:var(--text3);">—</span>`;
+  const m = getMember(pid);
+  const whoCell = m ? `<span style="font-size:10px;color:var(--text2);">${m.initials}</span>` : `<span style="font-size:10px;color:var(--amber);">?</span>`;
+  return `<div class="task-row${changes?.includes(t.key)?' changed':''}" draggable="true" data-key="${t.key}" data-from="${pid}" data-sprint="${si}">
+    <span style="display:flex;align-items:center;gap:3px;">${issueTypeIcon(t.type,t.typeIconUrl)}<a href="${cfg.url}/browse/${t.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${t.key}</a></span>
+    <span class="tsum" title="${t.sum}">${t.sum.length>40?t.sum.slice(0,40)+'…':t.sum}</span>
+    ${epicCell}
+    ${whoCell}
+    ${estRemCell}
+  </div>`;
+}
+
+function renderStoryGroupFull(story, subs, si, pid, changes) {
+  const storyRem = story.rem + subs.reduce((s,t)=>s+t.rem,0);
+  const storyEst = story.est + subs.reduce((s,t)=>s+t.est,0);
+  const gid = `all-sg-${si}-${story.key}`;
+  const storyEstCell = story.est===0 ? `<span class="no-est">нема</span>` : `<span class="est-rem">${storyEst}г <span class="rem">/ ${storyRem}г</span></span>`;
+  const storyEpicCell = story.epic ? `<span class="epic-tag" title="${story.epic}">${story.epic.length>12?story.epic.slice(0,12)+'…':story.epic}</span>` : `<span class="ttype" style="color:var(--text3);">—</span>`;
+  const m = getMember(pid);
+  const whoCell = m ? `<span style="font-size:10px;color:var(--text2);">${m.initials}</span>` : '';
+  return `<div class="story-group">
+    <div class="story-header-row" draggable="true" data-key="${story.key}" data-from="${pid}" data-sprint="${si}" onclick="toggleStoryGroup('${gid}',event)">
+      <span style="display:flex;align-items:center;gap:3px;"><span class="story-chev open" id="schev-${gid}">›</span>${issueTypeIcon(story.type,story.typeIconUrl)}<a href="${cfg.url}/browse/${story.key}" class="tkey" target="_blank" onclick="event.stopPropagation()">${story.key}</a></span>
+      <span class="tsum" title="${story.sum}">${story.sum.length>40?story.sum.slice(0,40)+'…':story.sum}</span>
+      ${storyEpicCell}
+      ${whoCell}
+      ${storyEstCell}
+    </div>
+    <div id="sgroup-${gid}" style="display:block;">
+      <div class="story-subtasks">${subs.map(t=>taskRowFull(t,si,pid,changes)).join('')}</div>
+    </div>
+  </div>`;
+}
+
 function renderPerson(si, m, changes) {
   const pid = memberKey(m);
   const pct = getPct(si, pid);
@@ -1226,6 +1364,113 @@ function toggleSg(sgId) {
   document.getElementById(`sgb-${sgId}`)?.classList.toggle('open', openStatuses[sgId]);
   document.getElementById(`sgc-${sgId}`)?.classList.toggle('open', openStatuses[sgId]);
 }
+async function addSprintTab(sprintName) {
+  if (sprints.find(s=>s.name===sprintName)) {
+    showNotice(`${sprintName} вже відкритий`, 'warn'); return;
+  }
+  const si = sprints.length;
+  setLoading(true, `Завантажуємо ${sprintName}...`);
+  const sp = allAvailableSprints.find(s=>s.name===sprintName);
+  if (!sp) { setLoading(false); showNotice('Спринт не знайдено', 'err'); return; }
+
+  const start = new Date(sp.startDate||Date.now()), end = new Date(sp.endDate||Date.now());
+  let wd = 0;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+    if (d.getDay()!==0 && d.getDay()!==6) wd++;
+  }
+  if (!wd) wd = 10;
+
+  const tasks = {}, vac = {}, openP = {};
+  for (const member of cfg.team) {
+    const pid = memberKey(member);
+    try {
+      const issues = await fetchPersonIssues(sp.name, member.name);
+      tasks[pid] = issues.filter(i=>!SKIP_STATUSES.has(i.fields.status.name)).map(i=>parseIssue(i));
+      tasks[pid].forEach(t=>{orig[t.key]={sprint:si,person:pid};});
+    } catch(e) { tasks[pid] = []; }
+    vac[pid] = 0; openP[pid] = true;
+  }
+  let unassigned = [];
+  try {
+    const uIssues = await fetchUnassignedIssues(sp.name);
+    unassigned = uIssues.filter(i=>!SKIP_STATUSES.has(i.fields.status.name)).map(i=>parseIssue(i));
+  } catch(e) {}
+
+  sprints.push({ id:si, name:sp.name, dates:formatDates(sp.startDate||'',sp.endDate||''), goal:sp.goal||'', tasks, unassigned });
+  sprintDays.push(wd);
+  vacDays.push(vac);
+  openPersons.push(openP);
+
+  // Add tab and panel to DOM
+  const tabBar = document.querySelector('.tab-bar');
+  const backlogTab = document.getElementById('tab-backlog');
+  const newTab = document.createElement('div');
+  newTab.className = 'tab';
+  newTab.id = `tab-s${si}`;
+  newTab.innerHTML = `<span id="tab-name-${si}">${sp.name}</span><span class="tab-pct" id="tab-pct-${si}"></span><span style="margin-left:6px;cursor:pointer;color:var(--text3);font-size:16px;line-height:1;" onclick="removeSprintTab(${si},event)" title="Закрити">×</span>`;
+  newTab.addEventListener('click', (e) => { if(!e.target.closest('[onclick]')) switchTab(si); });
+  tabBar.insertBefore(newTab, backlogTab);
+
+  const boardDiv = document.getElementById('board');
+  const tabLine = boardDiv.querySelector('.tab-line');
+  const newPanel = document.createElement('div');
+  newPanel.className = 'sprint-panel';
+  newPanel.id = `panel-${si}`;
+  tabLine.insertAdjacentElement('afterend', newPanel);
+
+  setLoading(false);
+  renderAll();
+  switchTab(si);
+  showNotice(`✓ ${sp.name} додано`, 'ok');
+}
+
+function removeSprintTab(si, e) {
+  e.stopPropagation();
+  if (sprints.length <= 1) { showNotice('Залиш хоча б один спринт', 'warn'); return; }
+  sprints.splice(si, 1);
+  sprintDays.splice(si, 1);
+  vacDays.splice(si, 1);
+  openPersons.splice(si, 1);
+  document.getElementById(`tab-s${si}`)?.remove();
+  document.getElementById(`panel-${si}`)?.remove();
+  const newCurrent = currentTab >= sprints.length ? 0 : (currentTab > si ? currentTab-1 : currentTab);
+  currentTab = -1;
+  switchTab(newCurrent);
+  renderAll();
+}
+
+function toggleSprintPicker() {
+  const picker = document.getElementById('sprint-picker');
+  const isOpen = picker.style.display !== 'none';
+  if (!isOpen) {
+    // Populate list
+    const openNames = new Set(sprints.map(s=>s.name));
+    const stateLabel = {active:'🟢 Активний', future:'🔵 Майбутній', closed:'⚫ Закритий'};
+    picker.innerHTML = allAvailableSprints.length
+      ? allAvailableSprints.map(s => `
+          <div onclick="addSprintTab('${s.name.replace(/'/g,"\'")}');toggleSprintPicker();"
+            style="padding:7px 14px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;${openNames.has(s.name)?'opacity:.4;pointer-events:none;':''}"
+            onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+            <span>${stateLabel[s.state]||s.state}</span>
+            <span style="flex:1;">${s.name}</span>
+            ${openNames.has(s.name)?'<span style="font-size:10px;color:var(--text3);">відкрито</span>':''}
+          </div>`).join('')
+      : '<div style="padding:12px;font-size:12px;color:var(--text3);">Завантаження...</div>';
+  }
+  picker.style.display = isOpen ? 'none' : 'block';
+  // Close on outside click
+  if (!isOpen) {
+    setTimeout(() => {
+      document.addEventListener('click', function closePicker(e) {
+        if (!document.getElementById('sprint-picker-wrap')?.contains(e.target)) {
+          picker.style.display='none';
+          document.removeEventListener('click', closePicker);
+        }
+      });
+    }, 10);
+  }
+}
+
 function toggleAll() {
   allExpanded = !allExpanded;
   sprints.forEach((_,si) => {
@@ -1320,6 +1565,14 @@ function updateSprintSum(si) {
   el.textContent=p+'%'; el.style.color=bc;
   const tabPct=document.getElementById(`tab-pct-${si}`);
   if(tabPct){tabPct.textContent=p+'%';tabPct.style.color=bc;}
+}
+
+function toggleGroupBy() {
+  groupByPerson = !groupByPerson;
+  const btn = document.getElementById('group-toggle');
+  btn.textContent = groupByPerson ? '👤 По людях' : '📋 Весь скоуп';
+  btn.style.background = groupByPerson ? '' : 'var(--bg3)';
+  renderAll();
 }
 
 function setFilter(f, btn) {
