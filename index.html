@@ -1068,8 +1068,10 @@ function getSprintStats(si) {
   const noEst = all.filter(t=>t.est===0 && t.type!=='Bug').length;
 
   const noAssignee = (sprints[si]?.unassigned||[]).length;
-  const totalRem = all.reduce((s,t)=>s+t.rem,0);
-  const totalEst = all.reduce((s,t)=>s+t.est,0);
+  // Exclude Done/RFD from remaining (they don't need work)
+  const activeTasks = all.filter(t=>!DONE_STATUSES.has(t.status));
+  const totalRem = activeTasks.reduce((s,t)=>s+t.rem,0);
+  const totalEst = activeTasks.reduce((s,t)=>s+t.est,0);
   const cap = cfg.team.reduce((s,m)=>s+getCap(si,memberKey(m)),0);
   const overloaded = cfg.team.filter(m=>getPct(si,memberKey(m))>90).map(m=>m.name.split(' ')[0]);
 
