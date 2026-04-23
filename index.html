@@ -787,6 +787,19 @@ function parseIssue(i) {
   };
 }
 
+function expandSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  // Update button text
+  const btn = el.previousElementSibling;
+  if (btn && btn.tagName === 'BUTTON') {
+    btn.textContent = el.style.display === 'none'
+      ? btn.textContent.replace('▲','▼')
+      : btn.textContent.replace('▼','▲');
+  }
+}
+
 function toggleStoryGroup(gid, e) {
   if (e.target.closest('a') || e.target.closest('.est-rem')) return;
   const body = document.getElementById('sgroup-' + gid);
@@ -1356,16 +1369,32 @@ function renderAnalytics() {
             ${stats.carryOverTodo>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#FCEBEB;color:#A32D2D;">📋 To Do: ${stats.carryOverTodo}</span>`:''}
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
-            ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').slice(0,5).map(t=>`
-              <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-                <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-                <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-                <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.status}</span>
-              </div>`).join('')}
+            ${['To do','In Progress','To Test','Testing','Review'].map(status => {
+              const tasks = stats.carryOver.filter(t=>t.status===status);
+              if (!tasks.length) return '';
+              return `<div style="margin-bottom:5px;">
+                <div style="font-size:10px;font-weight:600;color:var(--text2);padding:3px 0;text-transform:uppercase;letter-spacing:.04em;">${status} (${tasks.length})</div>
+                ${tasks.slice(0,3).map(t=>`
+                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
+                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
+                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
+                    <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
+                  </div>`).join('')}
+                ${tasks.length>3?`<div style="font-size:11px;color:var(--text3);">+ ще ${tasks.length-3}</div>`:''}
+              </div>`;
+            }).join('')}
             ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length > 5 ?
-              `<div onclick="this.parentElement.innerHTML='${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').slice(5).map(t=>`<div style=\"display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);\"><a href=\"${cfg.url}/browse/${t.key}\" target=\"_blank\" style=\"color:var(--blue);font-weight:500;min-width:72px;\">${t.key}</a><span style=\"color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\">${t.sum}</span><span style=\"font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);\">${t.status}</span></div>`).join('')}'"
-                style="font-size:11px;color:var(--blue);padding-top:5px;cursor:pointer;font-weight:500;">
+              `<button onclick="expandSection('carry-extra-${si}')" id="carry-btn-${si}"
+                style="font-size:11px;color:var(--blue);padding:5px 0;cursor:pointer;font-weight:500;background:none;border:none;">
                 ▼ показати ще ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length-5} задач
+              </button>
+              <div id="carry-extra-${si}" style="display:none;">
+                ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').slice(5).map(t=>`
+                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
+                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
+                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
+                    <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.status}</span>
+                  </div>`).join('')}
               </div>` : ''}
           </div>
         </div>` : '<div style="font-size:12px;color:var(--text3);">🎉 Немає carry-over — чистий старт спринту!</div>'}
@@ -1374,13 +1403,32 @@ function renderAnalytics() {
         <div id="added-mid-section" style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);">
           <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">➕ Додано після старту спринту:</div>
           <div style="display:flex;flex-direction:column;gap:2px;">
-            ${stats.addedMidSprint.slice(0,5).map(t=>`
-              <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-                <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-                <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-                <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
-              </div>`).join('')}
-            ${stats.addedMidSprint.length > 5 ? `<div onclick="this.parentElement.innerHTML='${stats.addedMidSprint.slice(5).map(t=>`<div style=\"display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);\"><a href=\"${cfg.url}/browse/${t.key}\" target=\"_blank\" style=\"color:var(--blue);font-weight:500;min-width:72px;\">${t.key}</a><span style=\"color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\">${t.sum}</span><span style=\"color:var(--text3);font-size:10px;\">${t.assignee||'—'}</span></div>`).join('')}'" style="font-size:11px;color:var(--blue);padding-top:5px;cursor:pointer;font-weight:500;">▼ показати ще ${stats.addedMidSprint.length-5} задач</div>` : ''}
+            ${[...new Set(stats.addedMidSprint.map(t=>t.assignee||'Без асайні'))].map(assignee => {
+              const tasks = stats.addedMidSprint.filter(t=>(t.assignee||'Без асайні')===assignee);
+              return `<div style="margin-bottom:6px;">
+                <div style="font-size:10px;font-weight:600;color:var(--text2);padding:4px 0 3px;text-transform:uppercase;letter-spacing:.04em;">${assignee} (${tasks.length})</div>
+                ${tasks.slice(0,3).map(t=>`
+                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
+                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
+                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
+                    <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.type}</span>
+                  </div>`).join('')}
+                ${tasks.length>3?`<div style="font-size:11px;color:var(--text3);padding:2px 0;">+ ще ${tasks.length-3}</div>`:''}
+              </div>`;
+            }).join('')}
+            ${stats.addedMidSprint.length > 5 ? `
+              <button onclick="expandSection('added-extra-${si}')"
+                style="font-size:11px;color:var(--blue);padding:5px 0;cursor:pointer;font-weight:500;background:none;border:none;">
+                ▼ показати ще ${stats.addedMidSprint.length-5} задач
+              </button>
+              <div id="added-extra-${si}" style="display:none;">
+                ${stats.addedMidSprint.slice(5).map(t=>`
+                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
+                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
+                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
+                    <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
+                  </div>`).join('')}
+              </div>` : ''}
           </div>
         </div>` : ''}
     </div>
