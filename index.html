@@ -1139,7 +1139,11 @@ Bugs в роботі: ${stats.bugsInProgress}
 Sprint Goal: ${sp.goal || 'не вказано'}`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    // Use /ai endpoint on proxy (server-side API key, no CORS issues)
+    const aiEndpoint = cfg.proxyUrl
+      ? `${cfg.proxyUrl}/ai`
+      : 'https://api.anthropic.com/v1/messages';
+    const res = await fetch(aiEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
