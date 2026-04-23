@@ -1043,7 +1043,7 @@ function getSprintStats(si) {
   const allTasks = Object.values(sprints[si]?.tasks || {}).flat();
   const unassigned = sprints[si]?.unassigned || [];
   const all = [...allTasks, ...unassigned];
-  const sprintStart = sprintStartDate; // reuse from above
+  const sprintStart = sprints[si]?.startDate ? new Date(sprints[si].startDate) : null;
 
   const total = all.length;
   // Done this sprint = Done status AND created after sprint start (not carry-over)
