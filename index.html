@@ -1149,7 +1149,7 @@ Sprint Goal: ${sp.goal || 'не вказано'}`;
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1000,
         system: 'Ти досвідчений Scrum Master та Delivery Manager. Аналізуй стан спринту і давай чіткі, практичні рекомендації українською мовою. Відповідай структуровано: 1) Вердикт (одним реченням: встигаємо/під ризиком/критично), 2) Ключові проблеми (2-3 пункти), 3) Рекомендації (2-3 конкретних дії). Будь прямим і конкретним.',
         messages: [{ role: 'user', content: `Проаналізуй поточний стан спринту:
