@@ -1340,10 +1340,10 @@ function renderAnalytics() {
           <div style="font-size:22px;font-weight:700;color:${stats.carryOver.length>stats.total*0.3?'var(--red)':stats.carryOver.length>0?'var(--yellow)':'var(--text)'};">${stats.carryOver.length}</div>
           <div style="font-size:11px;color:var(--text2);">з попереднього спринту</div>
         </div>
-        <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;">
+        <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;cursor:${stats.addedMidSprint.length>0?'pointer':'default'};" onclick="${stats.addedMidSprint.length>0?`document.getElementById('added-mid-section').scrollIntoView({behavior:'smooth'})`:''}">
           <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">➕ Додано в процесі</div>
           <div style="font-size:22px;font-weight:700;color:${stats.addedMidSprint.length>3?'var(--yellow)':'var(--text)'};">${stats.addedMidSprint.length}</div>
-          <div style="font-size:11px;color:var(--text2);">scope creep</div>
+          <div style="font-size:11px;color:var(--blue);">${stats.addedMidSprint.length>0?'↓ переглянути список':'scope creep відсутній'}</div>
         </div>
       </div>
 
@@ -1363,12 +1363,15 @@ function renderAnalytics() {
                 <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.status}</span>
               </div>`).join('')}
             ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length > 5 ?
-              `<div style="font-size:11px;color:var(--text3);padding-top:3px;">+ ще ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length-5} задач...</div>` : ''}
+              `<div onclick="this.parentElement.innerHTML='${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').slice(5).map(t=>`<div style=\"display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);\"><a href=\"${cfg.url}/browse/${t.key}\" target=\"_blank\" style=\"color:var(--blue);font-weight:500;min-width:72px;\">${t.key}</a><span style=\"color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\">${t.sum}</span><span style=\"font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);\">${t.status}</span></div>`).join('')}'"
+                style="font-size:11px;color:var(--blue);padding-top:5px;cursor:pointer;font-weight:500;">
+                ▼ показати ще ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length-5} задач
+              </div>` : ''}
           </div>
         </div>` : '<div style="font-size:12px;color:var(--text3);">🎉 Немає carry-over — чистий старт спринту!</div>'}
 
       ${stats.addedMidSprint.length > 0 ? `
-        <div style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);">
+        <div id="added-mid-section" style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);">
           <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">➕ Додано після старту спринту:</div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             ${stats.addedMidSprint.slice(0,5).map(t=>`
@@ -1377,7 +1380,7 @@ function renderAnalytics() {
                 <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
                 <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
               </div>`).join('')}
-            ${stats.addedMidSprint.length > 5 ? `<div style="font-size:11px;color:var(--text3);padding-top:3px;">+ ще ${stats.addedMidSprint.length-5} задач...</div>` : ''}
+            ${stats.addedMidSprint.length > 5 ? `<div onclick="this.parentElement.innerHTML='${stats.addedMidSprint.slice(5).map(t=>`<div style=\"display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);\"><a href=\"${cfg.url}/browse/${t.key}\" target=\"_blank\" style=\"color:var(--blue);font-weight:500;min-width:72px;\">${t.key}</a><span style=\"color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;\">${t.sum}</span><span style=\"color:var(--text3);font-size:10px;\">${t.assignee||'—'}</span></div>`).join('')}'" style="font-size:11px;color:var(--blue);padding-top:5px;cursor:pointer;font-weight:500;">▼ показати ще ${stats.addedMidSprint.length-5} задач</div>` : ''}
           </div>
         </div>` : ''}
     </div>
