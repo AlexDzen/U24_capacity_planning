@@ -1155,8 +1155,7 @@ ${context}` }]
     const text = data.content?.[0]?.text || 'Помилка отримання відповіді';
 
     // Parse verdict
-    const verdictLine = text.split('
-')[0] || '';
+    const verdictLine = text.split('\n')[0] || '';
     const isRisk = /ризик|критич|відстає|проблем/i.test(verdictLine);
     const isOk = /встигає|норм|добре|відмінно/i.test(verdictLine);
     const verdictClass = isRisk ? 'risk' : isOk ? 'ok' : 'warn';
@@ -1167,9 +1166,7 @@ ${context}` }]
     const bodyEl = document.getElementById('ai-body');
     const verdictEl = document.getElementById('ai-verdict');
     if (verdictEl) { verdictEl.className=`ai-verdict ${verdictClass}`; verdictEl.textContent=`${verdictIcon} ${verdictLine}`; }
-    if (bodyEl) bodyEl.textContent = text.split('
-').slice(1).join('
-').trim();
+    if (bodyEl) bodyEl.textContent = text.split('\n').slice(1).join('\n').trim();
     if (status) status.textContent = 'Оновлено щойно';
   } catch(e) {
     const bodyEl = document.getElementById('ai-body');
