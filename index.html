@@ -355,12 +355,14 @@
           <span>Backlog</span>
           <span class="tab-pct" id="tab-pct-backlog" style="color:var(--text3);"></span>
         </div>
-        <div style="position:relative;display:inline-block;" id="sprint-picker-wrap">
-          <button class="tog" onclick="toggleSprintPicker()" title="Додати спринт" style="padding:4px 10px;font-size:13px;">+ Спринт</button>
+        <div style="position:relative;display:inline-block;align-self:center;" id="sprint-picker-wrap">
+          <button onclick="toggleSprintPicker()" title="Додати спринт" style="padding:4px 10px;font-size:12px;border:1px dashed var(--border2);border-radius:6px;background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:4px;">
+            <span style="font-size:15px;line-height:1;">+</span> Спринт
+          </button>
           <div id="sprint-picker" style="display:none;position:absolute;top:110%;left:0;background:var(--bg2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:220px;max-height:260px;overflow-y:auto;z-index:50;padding:4px 0;">
           </div>
         </div>
-        <div class="tab" id="tab-analytics" onclick="switchTab('analytics')" style="gap:5px;">
+        <div class="tab" id="tab-analytics" onclick="switchTab('analytics')">
           <span>📊 Аналітика</span>
         </div>
         <span class="tab-hint">← перетягни задачу на вкладку для переносу між спринтами</span>
