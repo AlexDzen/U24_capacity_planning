@@ -648,6 +648,37 @@ async function fetchUnassignedIssues(sprintName) {
   return data.issues || [];
 }
 
+async function fetchPrevSprintKeys(currentSprintName) {
+  // Get the most recently closed sprint
+  try {
+    const jql = `project = ${cfg.project} AND sprint in closedSprints() ORDER BY updated DESC`;
+    const data = await searchJira(jql, ['customfield_10020','summary','status'], 0, 100);
+    if (!data.issues?.length) return { keys: new Set(), name: '' };
+
+    // Find previous sprint from customfield_10020
+    const spFields = data.issues[0]?.fields?.customfield_10020 || [];
+    const closed = spFields
+      .filter(s => s.state === 'closed' && s.name !== currentSprintName)
+      .sort((a,b) => new Date(b.endDate||0) - new Date(a.endDate||0));
+    const prevSprint = closed[0];
+    if (!prevSprint) return { keys: new Set(), name: '' };
+
+    // Get all keys from previous sprint
+    const prevJql = `project = ${cfg.project} AND sprint = "${prevSprint.name}"`;
+    const prevData = await searchJira(prevJql, ['summary','status'], 0, 200);
+    const keys = new Set((prevData.issues||[]).map(i => i.key));
+    const byStatus = {};
+    (prevData.issues||[]).forEach(i => {
+      const s = i.fields.status.name;
+      byStatus[s] = (byStatus[s]||0) + 1;
+    });
+    return { keys, name: prevSprint.name, total: prevData.issues?.length||0, byStatus };
+  } catch(e) {
+    console.warn('fetchPrevSprintKeys failed:', e);
+    return { keys: new Set(), name: '' };
+  }
+}
+
 async function fetchBacklogIssues() {
   const jql = `project = ${cfg.project} AND sprint is EMPTY AND status != Done ORDER BY priority ASC, created DESC`;
   const data = await searchJira(jql, FIELDS, 0, 100);
@@ -820,6 +851,13 @@ async function loadData() {
       }
     }
 
+    // Load previous sprint keys for carry-over detection (active sprint only)
+    let prevSprintInfo = { keys: new Set(), name: '', total: 0, byStatus: {} };
+    if (si === 0) {
+      setLoading(true, `Завантажуємо дані попереднього спринту...`);
+      prevSprintInfo = await fetchPrevSprintKeys(sp.name);
+    }
+
     // Enrich parentInfo with epic for Story parents
     try {
       const spKeys = new Set();
@@ -853,6 +891,7 @@ async function loadData() {
       endDate: sp.endDate,
       goal: sp.goal || '',
       tasks,
+      prevSprintInfo,
     });
     sprintDays.push(wd);
     vacDays.push(vac);
@@ -1034,16 +1073,24 @@ function getSprintStats(si) {
   const cap = cfg.team.reduce((s,m)=>s+getCap(si,memberKey(m)),0);
   const overloaded = cfg.team.filter(m=>getPct(si,memberKey(m))>90).map(m=>m.name.split(' ')[0]);
 
-  // Scope changes
-  let carryOver = [], addedMidSprint = [], startScope = [];
-  if (sprintStart) {
-    carryOver = all.filter(t => t.created && new Date(t.created) < sprintStart);
-    addedMidSprint = all.filter(t => t.created && new Date(t.created) >= sprintStart);
-    startScope = all; // All current tasks (removed ones not tracked yet)
-  }
+  // Scope changes using previous sprint data
+  const prevInfo = sprints[si]?.prevSprintInfo || { keys: new Set(), name: '', byStatus: {} };
+  const carryOver = all.filter(t => prevInfo.keys.has(t.key));
+  const carryOverByStatus = {};
+  carryOver.forEach(t => { carryOverByStatus[t.status] = (carryOverByStatus[t.status]||0)+1; });
+  const carryOverRFD = carryOver.filter(t => t.status === 'Ready for Deploy').length;
+  const carryOverInProgress = carryOver.filter(t => ['In Progress','To Test','Testing','Review'].includes(t.status)).length;
+  const carryOverTodo = carryOver.filter(t => t.status === 'To do').length;
+
+  // Added mid-sprint = created after sprint start AND not in prev sprint
+  const addedMidSprint = sprintStart
+    ? all.filter(t => t.created && new Date(t.created) >= sprintStart && !prevInfo.keys.has(t.key))
+    : [];
 
   return { total, done, doneCarryOver, inProgress, noEst, bugs, bugsNoEst, bugsInProgress, noAssignee,
-           totalRem, totalEst, cap, overloaded, carryOver, addedMidSprint, sprintStart };
+           totalRem, totalEst, cap, overloaded,
+           carryOver, carryOverByStatus, carryOverRFD, carryOverInProgress, carryOverTodo,
+           addedMidSprint, sprintStart, prevSprintName: prevInfo.name };
 }
 
 function renderBurndown(si) {
@@ -1140,8 +1187,9 @@ function getRisks(si) {
   // Carry-over
   if (stats.carryOver?.length > 0) {
     const pct = Math.round(stats.carryOver.length / stats.total * 100);
-    if (pct > 30) risks.push({level:'red', icon:'🔄', text:`${stats.carryOver.length} задач (${pct}%) перетягнуті з попереднього спринту — великий carry-over`});
-    else risks.push({level:'yellow', icon:'🔄', text:`${stats.carryOver.length} задач перетягнуті з попереднього спринту`});
+    if (stats.carryOverTodo > 0) risks.push({level:'red', icon:'🔄', text:`${stats.carryOverTodo} carry-over задач навіть не починали — потребують уваги`});
+    if (stats.carryOverInProgress > 0) risks.push({level:'yellow', icon:'🔄', text:`${stats.carryOverInProgress} carry-over задач в роботі/тесті`});
+    if (stats.carryOverRFD > 5) risks.push({level:'yellow', icon:'🚀', text:`${stats.carryOverRFD} задач Ready for Deploy чекають релізу — розгляньте закриття після релізу`});
   }
 
   // Added mid-sprint
@@ -1182,8 +1230,8 @@ async function runAIAnalysis(si) {
 Remaining: ${Math.round(stats.totalRem)}г з ${Math.round(stats.totalEst)}г
 Capacity: ${stats.cap}г
 Bugs в роботі: ${stats.bugsInProgress}
-Carry-over (з попереднього спринту): ${stats.carryOver?.length||0} задач
-Додано після старту спринту: ${stats.addedMidSprint?.length||0} задач
+Carry-over з попереднього спринту: ${stats.carryOver?.length||0} задач (з них Ready for Deploy: ${stats.carryOverRFD||0}, в роботі: ${stats.carryOverInProgress||0}, не почато: ${stats.carryOverTodo||0})
+Додано після старту спринту (scope creep): ${stats.addedMidSprint?.length||0} задач
 ВАЖЛИВО: QA (Олександр Жмурко) бере задачі розробників в тестування - його "навантаження" включає оцінку чужих задач, реальне навантаження QA менше. Задачі в статусі "Ready for Deploy" вважаються виконаними.
 Без асайні: ${stats.noAssignee}
 Ризики виявлені: ${risks.map(r=>r.text).join('; ')}
@@ -1277,43 +1325,60 @@ function renderAnalytics() {
     ${renderBurndown(si)}
 
     <!-- Scope changes -->
-    ${stats.sprintStart ? `<div class="an-card" style="margin-bottom:1rem;">
-      <div class="an-card-title">📦 Скоуп спринту</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:.75rem;">
+    <div class="an-card" style="margin-bottom:1rem;">
+      <div class="an-card-title">📦 Скоуп спринту${stats.prevSprintName?` <span style="font-weight:400;color:var(--text3);font-size:10px;">vs ${stats.prevSprintName}</span>`:''}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:.75rem;">
+        <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;">
+          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">🆕 Нові задачі</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text);">${stats.total - stats.carryOver.length}</div>
+          <div style="font-size:11px;color:var(--text2);">стартували в цьому спринті</div>
+        </div>
         <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;">
           <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">🔄 Carry-over</div>
-          <div style="font-size:20px;font-weight:700;color:${stats.carryOver.length>stats.total*0.3?'var(--red)':'var(--text)'};">${stats.carryOver.length}</div>
-          <div style="font-size:11px;color:var(--text2);">перетягнуті з минулого спринту</div>
+          <div style="font-size:22px;font-weight:700;color:${stats.carryOver.length>stats.total*0.3?'var(--red)':stats.carryOver.length>0?'var(--yellow)':'var(--text)'};">${stats.carryOver.length}</div>
+          <div style="font-size:11px;color:var(--text2);">з попереднього спринту</div>
         </div>
         <div style="background:var(--bg3);border-radius:6px;padding:8px 12px;">
-          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">➕ Додано після старту</div>
-          <div style="font-size:20px;font-weight:700;color:${stats.addedMidSprint.length>3?'var(--yellow)':'var(--text)'};">${stats.addedMidSprint.length}</div>
-          <div style="font-size:11px;color:var(--text2);">scope creep під час спринту</div>
+          <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">➕ Додано в процесі</div>
+          <div style="font-size:22px;font-weight:700;color:${stats.addedMidSprint.length>3?'var(--yellow)':'var(--text)'};">${stats.addedMidSprint.length}</div>
+          <div style="font-size:11px;color:var(--text2);">scope creep</div>
         </div>
       </div>
-      ${stats.addedMidSprint.length > 0 ? `
-        <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:5px;">Додані задачі:</div>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          ${stats.addedMidSprint.slice(0,5).map(t=>`
-            <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-              <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-              <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-              <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
-            </div>`).join('')}
-          ${stats.addedMidSprint.length > 5 ? `<div style="font-size:11px;color:var(--text3);padding-top:3px;">+ ще ${stats.addedMidSprint.length-5} задач...</div>` : ''}
-        </div>` : ''}
+
       ${stats.carryOver.length > 0 ? `
-        <div style="font-size:11px;font-weight:500;color:var(--text2);margin-top:.5rem;margin-bottom:5px;">Carry-over задачі:</div>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          ${stats.carryOver.slice(0,5).map(t=>`
-            <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-              <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-              <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-              <span style="color:var(--text3);font-size:10px;">${t.est}г</span>
-            </div>`).join('')}
-          ${stats.carryOver.length > 5 ? `<div style="font-size:11px;color:var(--text3);padding-top:3px;">+ ще ${stats.carryOver.length-5} задач...</div>` : ''}
+        <div style="margin-bottom:.5rem;">
+          <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">🔄 Carry-over розбивка:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            ${stats.carryOverRFD>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#E1F5EE;color:#0F6E56;">✅ Ready for Deploy: ${stats.carryOverRFD}</span>`:''}
+            ${stats.carryOverInProgress>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#FAEEDA;color:#854F0B;">🧪 В роботі/тесті: ${stats.carryOverInProgress}</span>`:''}
+            ${stats.carryOverTodo>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#FCEBEB;color:#A32D2D;">📋 To Do: ${stats.carryOverTodo}</span>`:''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').slice(0,5).map(t=>`
+              <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
+                <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
+                <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
+                <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.status}</span>
+              </div>`).join('')}
+            ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length > 5 ?
+              `<div style="font-size:11px;color:var(--text3);padding-top:3px;">+ ще ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length-5} задач...</div>` : ''}
+          </div>
+        </div>` : '<div style="font-size:12px;color:var(--text3);">🎉 Немає carry-over — чистий старт спринту!</div>'}
+
+      ${stats.addedMidSprint.length > 0 ? `
+        <div style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">➕ Додано після старту спринту:</div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            ${stats.addedMidSprint.slice(0,5).map(t=>`
+              <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
+                <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
+                <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
+                <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
+              </div>`).join('')}
+            ${stats.addedMidSprint.length > 5 ? `<div style="font-size:11px;color:var(--text3);padding-top:3px;">+ ще ${stats.addedMidSprint.length-5} задач...</div>` : ''}
+          </div>
         </div>` : ''}
-    </div>` : ''}
+    </div>
 
     <!-- Risks -->
     <div class="an-card" style="margin-bottom:1rem;">
