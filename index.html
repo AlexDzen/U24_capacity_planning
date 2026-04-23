@@ -1362,73 +1362,51 @@ function renderAnalytics() {
 
       ${stats.carryOver.length > 0 ? `
         <div style="margin-bottom:.5rem;">
-          <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">🔄 Carry-over розбивка:</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-            ${stats.carryOverRFD>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#E1F5EE;color:#0F6E56;">✅ Ready for Deploy: ${stats.carryOverRFD}</span>`:''}
-            ${stats.carryOverInProgress>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#FAEEDA;color:#854F0B;">🧪 В роботі/тесті: ${stats.carryOverInProgress}</span>`:''}
-            ${stats.carryOverTodo>0?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#FCEBEB;color:#A32D2D;">📋 To Do: ${stats.carryOverTodo}</span>`:''}
+          <!-- Carry-over badges -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            ${stats.carryOverRFD>0?`<span style="font-size:11px;padding:3px 10px;border-radius:20px;background:#E1F5EE;color:#0F6E56;font-weight:500;">✅ Ready for Deploy: ${stats.carryOverRFD}</span>`:''}
+            ${stats.carryOverInProgress>0?`<span style="font-size:11px;padding:3px 10px;border-radius:20px;background:#FAEEDA;color:#854F0B;font-weight:500;">🧪 В роботі/тесті: ${stats.carryOverInProgress}</span>`:''}
+            ${stats.carryOverTodo>0?`<span style="font-size:11px;padding:3px 10px;border-radius:20px;background:#FCEBEB;color:#A32D2D;font-weight:500;">📋 To Do: ${stats.carryOverTodo}</span>`:''}
           </div>
-          <div style="display:flex;flex-direction:column;gap:2px;">
-            ${['To do','In Progress','To Test','Testing','Review'].map(status => {
-              const tasks = stats.carryOver.filter(t=>t.status===status);
-              if (!tasks.length) return '';
-              return `<div style="margin-bottom:5px;">
-                <div style="font-size:10px;font-weight:600;color:var(--text2);padding:3px 0;text-transform:uppercase;letter-spacing:.04em;">${status} (${tasks.length})</div>
-                ${tasks.slice(0,3).map(t=>`
-                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-                    <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
-                  </div>`).join('')}
-                ${tasks.length>3?`<div style="font-size:11px;color:var(--text3);">+ ще ${tasks.length-3}</div>`:''}
-              </div>`;
-            }).join('')}
-            ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length > 5 ?
-              `<button onclick="expandSection('carry-extra-${si}')" id="carry-btn-${si}"
-                style="font-size:11px;color:var(--blue);padding:5px 0;cursor:pointer;font-weight:500;background:none;border:none;">
-                ▼ показати ще ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length-5} задач
-              </button>
-              <div id="carry-extra-${si}" style="display:none;">
-                ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').slice(5).map(t=>`
-                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-                    <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.status}</span>
-                  </div>`).join('')}
-              </div>` : ''}
-          </div>
-        </div>` : '<div style="font-size:12px;color:var(--text3);">🎉 Немає carry-over — чистий старт спринту!</div>'}
+          <!-- Accordion: active carry-over only (not RFD) -->
+          ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length > 0 ? `
+            <button onclick="expandSection('carry-active-${si}')"
+              style="width:100%;text-align:left;font-size:12px;color:var(--text2);padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+              <span>Переглянути активні carry-over (${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').length})</span>
+              <span>▼</span>
+            </button>
+            <div id="carry-active-${si}" style="display:none;margin-top:4px;">
+              ${stats.carryOver.filter(t=>t.status!=='Ready for Deploy').map(t=>`
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 4px;border-bottom:1px solid var(--border);">
+                  <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:80px;">${t.key}</a>
+                  <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">${t.sum}</span>
+                  <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text2);white-space:nowrap;">${t.status}</span>
+                  <span style="font-size:11px;color:var(--text3);white-space:nowrap;">${t.assignee?.split(' ')[0]||'—'}</span>
+                </div>`).join('')}
+            </div>` : ''}
+        </div>` : '<div style="font-size:12px;color:var(--text3);padding:4px 0;">🎉 Немає carry-over — чистий старт спринту!</div>'}
 
       ${stats.addedMidSprint.length > 0 ? `
-        <div id="added-mid-section" style="margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--border);">
-          <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:5px;">➕ Додано після старту спринту:</div>
-          <div style="display:flex;flex-direction:column;gap:2px;">
-            ${[...new Set(stats.addedMidSprint.map(t=>t.assignee||'Без асайні'))].map(assignee => {
-              const tasks = stats.addedMidSprint.filter(t=>(t.assignee||'Без асайні')===assignee);
-              return `<div style="margin-bottom:6px;">
-                <div style="font-size:10px;font-weight:600;color:var(--text2);padding:4px 0 3px;text-transform:uppercase;letter-spacing:.04em;">${assignee} (${tasks.length})</div>
-                ${tasks.slice(0,3).map(t=>`
-                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-                    <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--bg3);color:var(--text2);">${t.type}</span>
+        <div id="added-mid-section" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);">
+          <button onclick="expandSection('added-mid-list-${si}')"
+            style="width:100%;text-align:left;font-size:12px;color:var(--text2);padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+            <span>➕ Переглянути додані після старту (${stats.addedMidSprint.length})</span>
+            <span>▼</span>
+          </button>
+          <div id="added-mid-list-${si}" style="display:none;margin-top:4px;">
+            ${[...new Set(stats.addedMidSprint.map(t=>t.assignee?.split(' ')[0]||'Без асайні'))].map(firstName => {
+              const fullName = stats.addedMidSprint.find(t=>t.assignee?.split(' ')[0]===firstName||(!t.assignee&&firstName==='Без асайні'))?.assignee || firstName;
+              const tasks = stats.addedMidSprint.filter(t=>(t.assignee?.split(' ')[0]||'Без асайні')===firstName);
+              return `<div style="margin-bottom:8px;">
+                <div style="font-size:11px;font-weight:600;color:var(--text2);padding:6px 4px 3px;border-bottom:2px solid var(--border2);">${fullName} — ${tasks.length} задач</div>
+                ${tasks.map(t=>`
+                  <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 4px;border-bottom:1px solid var(--border);">
+                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:80px;">${t.key}</a>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">${t.sum}</span>
+                    <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text2);">${t.type}</span>
                   </div>`).join('')}
-                ${tasks.length>3?`<div style="font-size:11px;color:var(--text3);padding:2px 0;">+ ще ${tasks.length-3}</div>`:''}
               </div>`;
             }).join('')}
-            ${stats.addedMidSprint.length > 5 ? `
-              <button onclick="expandSection('added-extra-${si}')"
-                style="font-size:11px;color:var(--blue);padding:5px 0;cursor:pointer;font-weight:500;background:none;border:none;">
-                ▼ показати ще ${stats.addedMidSprint.length-5} задач
-              </button>
-              <div id="added-extra-${si}" style="display:none;">
-                ${stats.addedMidSprint.slice(5).map(t=>`
-                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);">
-                    <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:500;min-width:72px;">${t.key}</a>
-                    <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.sum}</span>
-                    <span style="color:var(--text3);font-size:10px;">${t.assignee||'—'}</span>
-                  </div>`).join('')}
-              </div>` : ''}
           </div>
         </div>` : ''}
     </div>
