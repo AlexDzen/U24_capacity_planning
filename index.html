@@ -1004,10 +1004,20 @@ function getSprintStats(si) {
   const allTasks = Object.values(sprints[si]?.tasks || {}).flat();
   const unassigned = sprints[si]?.unassigned || [];
   const all = [...allTasks, ...unassigned];
-  const sprintStart = sprints[si]?.startDate ? new Date(sprints[si].startDate) : null;
+  const sprintStart = sprintStartDate; // reuse from above
 
   const total = all.length;
-  const done = all.filter(t=>DONE_STATUSES.has(t.status)).length;
+  // Done this sprint = Done status AND created after sprint start (not carry-over)
+  // OR Done + carry-over but we can't know when it became Done without changelog
+  // Best approximation: Done tasks created during sprint = done in this sprint
+  const sprintStartDate = sprints[si]?.startDate ? new Date(sprints[si].startDate) : null;
+  const doneAll = all.filter(t=>DONE_STATUSES.has(t.status));
+  const done = sprintStartDate
+    ? doneAll.filter(t => !t.created || new Date(t.created) >= sprintStartDate).length
+    : doneAll.length;
+  const doneCarryOver = sprintStartDate
+    ? doneAll.filter(t => t.created && new Date(t.created) < sprintStartDate).length
+    : 0;
   const inProgress = all.filter(t=>t.status==='In Progress').length;
 
   // Bugs separate from no-estimate
@@ -1032,7 +1042,7 @@ function getSprintStats(si) {
     startScope = all; // All current tasks (removed ones not tracked yet)
   }
 
-  return { total, done, inProgress, noEst, bugs, bugsNoEst, bugsInProgress, noAssignee,
+  return { total, done, doneCarryOver, inProgress, noEst, bugs, bugsNoEst, bugsInProgress, noAssignee,
            totalRem, totalEst, cap, overloaded, carryOver, addedMidSprint, sprintStart };
 }
 
@@ -1111,7 +1121,8 @@ function getRisks(si) {
   if (!prog || !stats) return [];
   const risks = [];
   const { daysPct, elapsedWD, totalWD } = prog;
-  const donePct = stats.total ? Math.round(stats.done/stats.total*100) : 0;
+  const sprintTotal = stats.total - (stats.doneCarryOver||0);
+  const donePct = sprintTotal ? Math.round(stats.done/sprintTotal*100) : 0;
 
   // Behind schedule
   if (daysPct > donePct + 20) risks.push({level:'red', icon:'🔴', text:`Відстаємо: пройшло ${daysPct}% часу, але виконано лише ${donePct}% задач`});
@@ -1224,7 +1235,8 @@ function renderAnalytics() {
   const prog = getSprintProgress(si);
   const stats = getSprintStats(si);
   const risks = getRisks(si);
-  const donePct = stats.total ? Math.round(stats.done/stats.total*100) : 0;
+  const sprintTotal = stats.total - (stats.doneCarryOver||0);
+  const donePct = sprintTotal ? Math.round(stats.done/sprintTotal*100) : 0;
   const remPct = stats.cap ? Math.round(stats.totalRem/stats.cap*100) : 0;
 
   const sprintSelector = sprints.map((sp,i)=>`<option value="${i}"${i===si?' selected':''}>${sp.name}</option>`).join('');
@@ -1246,9 +1258,9 @@ function renderAnalytics() {
         <div class="an-sub">День ${prog.elapsedWD} з ${prog.totalWD}</div>
       </div>
       <div class="an-card">
-        <div class="an-card-title">✅ Виконано задач</div>
+        <div class="an-card-title">✅ Виконано в спринті</div>
         <div class="an-big ${donePct<prog.daysPct-20?'an-err':donePct<prog.daysPct?'an-warn':'an-ok'}">${donePct}%</div>
-        <div class="an-sub">${stats.done} з ${stats.total} задач</div>
+        <div class="an-sub">${stats.done} з ${stats.total - stats.doneCarryOver} задач${stats.doneCarryOver>0?` · ${stats.doneCarryOver} carry-over вже Done`:''}</div>
       </div>
       <div class="an-card">
         <div class="an-card-title">⏱ Remaining</div>
