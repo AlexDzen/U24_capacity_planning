@@ -318,19 +318,20 @@
         <text x="16" y="22" font-family="Arial Black,Arial" font-weight="900" font-size="14" fill="#FFD700" text-anchor="middle">U24</text>
       </svg>
       <div>
-        <div class="app-logo" style="line-height:1.1;">Capacity Planning</div>
-        <div style="font-size:10px;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;">United24 · Sprint Board</div>
+        <div class="app-logo" style="line-height:1.1;" id="app-title">Capacity Planning</div>
+        <div style="font-size:10px;color:var(--text3);letter-spacing:.05em;text-transform:uppercase;" id="app-subtitle">United24 · Sprint Board</div>
       </div>
     </div>
     <div class="app-project" id="header-project">U24</div>
     <div class="header-actions">
-      <button class="fbtn active" onclick="setFilter('all',this)">Усі</button>
-      <button class="fbtn" onclick="setFilter('inprogress',this)">In Progress</button>
-      <button class="fbtn" onclick="setFilter('noest',this)">Без оцінки</button>
+      <button class="fbtn active" onclick="setFilter('all',this)" id="btn-all">Усі</button>
+      <button class="fbtn" onclick="setFilter('inprogress',this)" id="btn-inprogress">In Progress</button>
+      <button class="fbtn" onclick="setFilter('noest',this)" id="btn-noest">Без оцінки</button>
       <button class="fbtn" id="tog-btn" onclick="toggleAll()">Згорнути всіх</button>
       <button class="refresh-btn" onclick="refreshData()" title="Перезавантажити дані з Jira">↻ Оновити</button>
       <button class="settings-btn" onclick="openSettings()">⚙ Налаштування</button>
       <button class="tog" id="group-toggle" onclick="toggleGroupBy()" title="Перемикач: по людях / весь скоуп">👤 По людях</button>
+      <button onclick="switchLang()" id="lang-btn" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:var(--bg2);color:var(--text2);">🇬🇧 EN</button>
       <button class="jbtn" id="jbtn" onclick="openModal()">Застосувати в Jira</button>
     </div>
   </div>
@@ -634,7 +635,7 @@ async function searchJira(jql, fields, startAt=0, maxResults=100) {
   return res.json();
 }
 
-const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority','customfield_10014','customfield_10015','created'];
+const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority','customfield_10014','customfield_10015','created','updated'];
 
 async function fetchPersonIssues(sprintName, personName) {
   const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
@@ -784,6 +785,7 @@ function parseIssue(i) {
     parentInfo: parentInfo,
     assignee: i.fields.assignee?.displayName || null,
     created: i.fields.created || null,
+    updated: i.fields.updated || null,
   };
 }
 
@@ -1293,6 +1295,98 @@ ${context}` }]
   if (btn) { btn.disabled=false; btn.innerHTML='✨ Оновити аналіз'; }
 }
 
+function getStuckTasks(si) {
+  const allTasks = Object.values(sprints[si]?.tasks || {}).flat();
+  const unassigned = sprints[si]?.unassigned || [];
+  const all = [...allTasks, ...unassigned];
+  const sprintStart = sprints[si]?.startDate ? new Date(sprints[si].startDate) : null;
+  const now = new Date();
+  const HPD = 8; // hours per day
+  const stuck = [];
+
+  all.forEach(t => {
+    if (DONE_STATUSES.has(t.status)) return;
+    const updatedDaysAgo = t.updated
+      ? Math.floor((now - new Date(t.updated)) / 86400000)
+      : null;
+    const estDays = t.est > 0 ? Math.ceil(t.est / HPD) : null;
+    const daysSinceStart = sprintStart
+      ? Math.floor((now - sprintStart) / 86400000)
+      : null;
+
+    let issue = null;
+
+    // Rule 1: In Progress longer than estimate
+    if (t.status === 'In Progress' && estDays && updatedDaysAgo !== null) {
+      if (updatedDaysAgo > estDays) {
+        issue = {
+          level: 'red',
+          icon: '🔴',
+          reason: `In Progress ${updatedDaysAgo} дн. при оцінці ${estDays} дн.`,
+          detail: `Оцінка: ${t.est}г, оновлювалось ${updatedDaysAgo} дн. тому`
+        };
+      } else if (updatedDaysAgo >= estDays * 0.8) {
+        issue = {
+          level: 'yellow',
+          icon: '🟡',
+          reason: `In Progress ${updatedDaysAgo} дн., наближається до ліміту (${estDays} дн.)`,
+          detail: `Оцінка: ${t.est}г`
+        };
+      }
+    }
+
+    // Rule 2: In Progress with no estimate - stuck more than 3 days
+    if (t.status === 'In Progress' && !estDays && updatedDaysAgo > 3) {
+      issue = {
+        level: 'red',
+        icon: '🔴',
+        reason: `In Progress ${updatedDaysAgo} дн. без оцінки`,
+        detail: 'Немає оцінки — неможливо прогнозувати'
+      };
+    }
+
+    // Rule 3: To Test more than 3 days
+    if ((t.status === 'To Test' || t.status === 'Testing') && updatedDaysAgo > 3) {
+      issue = {
+        level: updatedDaysAgo > 5 ? 'red' : 'yellow',
+        icon: updatedDaysAgo > 5 ? '🔴' : '🟠',
+        reason: `На тестуванні ${updatedDaysAgo} дн.`,
+        detail: 'Тестування затягується'
+      };
+    }
+
+    // Rule 4: To Do since sprint start (carry-over not started)
+    if (t.status === 'To do' && sprintStart && daysSinceStart > 2) {
+      const isCarryOver = sprints[si]?.prevSprintInfo?.keys?.has(t.key);
+      if (isCarryOver) {
+        issue = {
+          level: 'red',
+          icon: '🔴',
+          reason: `To Do вже ${daysSinceStart} дн. спринту (carry-over не починали)`,
+          detail: t.assignee || 'Без асайні'
+        };
+      } else if (daysSinceStart > 5 && t.created && new Date(t.created) <= sprintStart) {
+        issue = {
+          level: 'yellow',
+          icon: '🟡',
+          reason: `To Do з початку спринту, ${daysSinceStart} дн. не починали`,
+          detail: t.assignee || 'Без асайні'
+        };
+      }
+    }
+
+    if (issue) {
+      stuck.push({ ...t, issue });
+    }
+  });
+
+  // Sort: red first, then yellow
+  return stuck.sort((a,b) => {
+    const order = {red:0, yellow:1};
+    return (order[a.issue.level]||2) - (order[b.issue.level]||2);
+  });
+}
+
 function renderAnalytics() {
   const si = typeof currentTab === 'number' ? currentTab : 0;
   const prog = getSprintProgress(si);
@@ -1419,6 +1513,33 @@ function renderAnalytics() {
         ${!risks.length?'<div class="risk-item green"><span class="risk-icon">🟢</span><span>Ризиків не виявлено</span></div>':''}
       </div>
     </div>
+
+    <!-- Stuck Tasks -->
+    ${(() => {
+      const stuck = getStuckTasks(si);
+      if (!stuck.length) return `<div class="an-card" style="margin-bottom:1rem;">
+        <div class="an-card-title">🎯 Проблемні задачі</div>
+        <div class="risk-item green"><span class="risk-icon">🟢</span><span>Застряглих задач не виявлено</span></div>
+      </div>`;
+      return `<div class="an-card" style="margin-bottom:1rem;">
+        <div class="an-card-title">🎯 Проблемні задачі <span style="font-weight:400;color:var(--text3);">${stuck.length} задач потребують уваги</span></div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${stuck.map(t => `
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:6px;background:${t.issue.level==='red'?'#FCEBEB':'#FAEEDA'};border:1px solid ${t.issue.level==='red'?'#F7C1C1':'#FAC775'};">
+              <span style="font-size:14px;flex-shrink:0;margin-top:1px;">${t.issue.icon}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;flex-wrap:wrap;">
+                  ${issueTypeIcon(t.type,t.typeIconUrl)}
+                  <a href="${cfg.url}/browse/${t.key}" target="_blank" style="color:var(--blue);font-weight:600;font-size:12px;">${t.key}</a>
+                  <span style="font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px;" title="${t.sum}">${t.sum.length>50?t.sum.slice(0,50)+'…':t.sum}</span>
+                </div>
+                <div style="font-size:11px;color:${t.issue.level==='red'?'#A32D2D':'#854F0B'};font-weight:500;">${t.issue.reason}</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:1px;">${t.issue.detail} ${t.assignee?'· '+t.assignee.split(' ')[0]:''}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    })()}
 
     <!-- AI Analysis -->
     <div class="ai-card">
@@ -1748,9 +1869,18 @@ function renderPerson(si, m, changes) {
     // Group tasks: stories with their sub-tasks
     const taskRow = (t, indent=false) => {
       const hasRem = t.rem !== t.est || t.est === 0;
+      // Stuck task detection
+      const now2 = new Date();
+      const updDays = t.updated ? Math.floor((now2-new Date(t.updated))/86400000) : null;
+      const estDays2 = t.est>0 ? Math.ceil(t.est/8) : null;
+      const isStuck = (t.status==='In Progress' && estDays2 && updDays>estDays2) ||
+                      (t.status==='In Progress' && !estDays2 && updDays>3) ||
+                      ((t.status==='To Test'||t.status==='Testing') && updDays>3);
+      const stuckIcon = isStuck ? `<span title="Задача застрягла!" style="font-size:12px;margin-left:3px;">⚠️</span>` : '';
+
       const estRemCell = t.est===0
-        ? `<span class="no-est">нема</span>`
-        : `<span class="est-rem" data-key="${t.key}" data-si="${si}" data-pid="${pid}" data-est="${t.est}" data-rem="${t.rem}" onclick="startEditEst(this)" title="Клік для редагування" style="cursor:pointer;">${t.est}г <span class="rem">/ ${t.rem}г</span></span>`;
+        ? `<span class="no-est">нема</span>${stuckIcon}`
+        : `<span class="est-rem" data-key="${t.key}" data-si="${si}" data-pid="${pid}" data-est="${t.est}" data-rem="${t.rem}" onclick="startEditEst(this)" title="Клік для редагування" style="cursor:pointer;">${t.est}г <span class="rem">/ ${t.rem}г</span></span>${stuckIcon}`;
       const epicCell = t.epic
         ? `<span class="epic-tag" title="${t.epic}">${t.epic.length>16?t.epic.slice(0,16)+'…':t.epic}</span>`
         : `<span class="ttype" style="color:var(--text3);">—</span>`;
@@ -2323,6 +2453,273 @@ function showNotice(msg, type) {
 [document.getElementById('modal-bg'), document.getElementById('settings-bg')].forEach(el => {
   el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); });
 });
+
+// ══════════════════════════════════════════════
+// I18N — Localization
+// ══════════════════════════════════════════════
+let currentLang = localStorage.getItem('capacity-lang') || 'uk';
+
+const T = {
+  uk: {
+    // Header
+    appTitle: 'Capacity Planning',
+    appSubtitle: 'UNITED24 · SPRINT BOARD',
+    btnAll: 'Усі',
+    btnInProgress: 'In Progress',
+    btnNoEst: 'Без оцінки',
+    btnCollapse: 'Згорнути всіх',
+    btnExpand: 'Розгорнути всіх',
+    btnRefresh: '↻ Оновити',
+    btnSettings: '⚙ Налаштування',
+    btnApplyJira: 'Застосувати в Jira',
+    btnByPerson: '👤 По людях',
+    btnAllScope: '📋 Весь скоуп',
+    btnAddSprint: '+ Спринт',
+    // Tabs
+    tabBacklog: 'Backlog',
+    tabAnalytics: '📊 Аналітика',
+    tabHint: '← перетягни задачу на вкладку для переносу між спринтами',
+    // Sprint header
+    sprintActive: 'Активний',
+    sprintNext: 'Наступний',
+    workDaysLabel: 'Робочих днів:',
+    capLabel: 'КАПАСІТІ',
+    remLabel: 'REMAINING',
+    loadLabel: 'НАВАНТАЖЕННЯ',
+    vacTitle: 'Відпустки',
+    // Person block
+    noTasks: 'Немає активних задач — перетягни сюди',
+    unassignedTitle: 'Без асайні',
+    // Task columns
+    colKey: 'Тип · Ключ',
+    colName: 'Назва',
+    colEpic: 'Епік',
+    colPriority: 'Пріоритет',
+    colEstRem: 'Est / Rem',
+    colWho: 'Хто',
+    noEst: 'нема',
+    // Backlog
+    backlogTitle: 'Backlog',
+    backlogNoEst: 'Без оцінки',
+    backlogBugs: 'Bugs',
+    backlogAddTo: '+ В спринт...',
+    backlogEmpty: 'Немає задач за фільтром',
+    // Analytics
+    analyticsTitle: 'Sprint Health Dashboard',
+    cardTimeProgress: '📅 Прогрес часу',
+    cardDone: '✅ Виконано в спринті',
+    cardRemaining: '⏱ Remaining',
+    cardLoad: '👥 Навантаження',
+    dayOf: 'День',
+    of: 'з',
+    tasks: 'задач',
+    daysAhead: 'г випереджаємо',
+    daysBehind: 'г відстаємо',
+    burndownTitle: '📉 Burndown',
+    burndownActive: '(активний)',
+    burndownNext: '(наступний)',
+    burndownIdeal: 'ідеальна',
+    burndownReal: 'реальна',
+    burndownToday: 'сьогодні',
+    risksTitle: '⚠️ Ризики та статус',
+    noRisks: 'Ризиків не виявлено',
+    scopeTitle: '📦 Скоуп спринту',
+    scopeNew: '🆕 Нові задачі',
+    scopeNewSub: 'стартували в цьому спринті',
+    scopeCarry: '🔄 Carry-over',
+    scopeCarrySub: 'з попереднього спринту',
+    scopeAdded: '➕ Додано в процесі',
+    scopeAddedSub: 'scope creep',
+    carryRFD: '✅ Ready for Deploy',
+    carryInProgress: '🧪 В роботі/тесті',
+    carryTodo: '📋 To Do',
+    viewActiveCarry: 'Переглянути активні carry-over',
+    viewAddedMid: '➕ Переглянути додані після старту',
+    noCarryOver: '🎉 Немає carry-over — чистий старт спринту!',
+    addedAfterStart: 'Додано після старту спринту:',
+    stuckTitle: '🎯 Проблемні задачі',
+    stuckNone: 'Застряглих задач не виявлено',
+    stuckNeedAttention: 'задач потребують уваги',
+    aiTitle: 'AI Аналіз спринту',
+    aiNotStarted: 'не запущено',
+    aiGenerating: 'Генерую...',
+    aiRunBtn: '✨ Запустити AI аналіз',
+    aiUpdateBtn: '✨ Оновити аналіз',
+    aiPlaceholder: 'Натисни кнопку щоб Claude проаналізував поточний стан спринту та надав рекомендації.',
+    // Modal
+    modalApplyTitle: 'Застосувати зміни в Jira',
+    modalCancel: 'Скасувати',
+    modalApply: 'Зберегти в Jira',
+    // Setup
+    setupTitle: 'Sprint Capacity Planning',
+    setupSub: 'Підключи Jira і налаштуй команду — один раз, потім все автоматично.',
+    setupJiraUrl: 'Jira URL',
+    setupEmail: 'Email',
+    setupToken: 'API Token',
+    setupProxy: 'Proxy URL',
+    setupProject: 'Jira Project Key',
+    setupTeam: "Команда (ім'я в Jira → ініціали → роль)",
+    setupAddMember: '+ Додати учасника',
+    setupConnect: 'Підключитись і завантажити спринт',
+    // Notices
+    noChanges: 'Немає змін — перетягни задачу між спринтами або учасниками.',
+    appliedOk: 'оновлено в Jira!',
+    // Loading
+    loadingActiveSprint: 'Знаходимо активні спринти...',
+    loadingPrevSprint: 'Завантажуємо дані попереднього спринту...',
+    loadingEpics: 'Завантажуємо епіки...',
+    loadingBacklog: 'Завантажуємо backlog...',
+  },
+  en: {
+    // Header
+    appTitle: 'Capacity Planning',
+    appSubtitle: 'UNITED24 · SPRINT BOARD',
+    btnAll: 'All',
+    btnInProgress: 'In Progress',
+    btnNoEst: 'No estimate',
+    btnCollapse: 'Collapse all',
+    btnExpand: 'Expand all',
+    btnRefresh: '↻ Refresh',
+    btnSettings: '⚙ Settings',
+    btnApplyJira: 'Apply to Jira',
+    btnByPerson: '👤 By person',
+    btnAllScope: '📋 All tasks',
+    btnAddSprint: '+ Sprint',
+    // Tabs
+    tabBacklog: 'Backlog',
+    tabAnalytics: '📊 Analytics',
+    tabHint: '← drag a task to a tab to move between sprints',
+    // Sprint header
+    sprintActive: 'Active',
+    sprintNext: 'Next',
+    workDaysLabel: 'Working days:',
+    capLabel: 'CAPACITY',
+    remLabel: 'REMAINING',
+    loadLabel: 'WORKLOAD',
+    vacTitle: 'Days off',
+    // Person block
+    noTasks: 'No active tasks — drag here',
+    unassignedTitle: 'Unassigned',
+    // Task columns
+    colKey: 'Type · Key',
+    colName: 'Name',
+    colEpic: 'Epic',
+    colPriority: 'Priority',
+    colEstRem: 'Est / Rem',
+    colWho: 'Who',
+    noEst: 'none',
+    // Backlog
+    backlogTitle: 'Backlog',
+    backlogNoEst: 'No estimate',
+    backlogBugs: 'Bugs',
+    backlogAddTo: '+ To sprint...',
+    backlogEmpty: 'No tasks match the filter',
+    // Analytics
+    analyticsTitle: 'Sprint Health Dashboard',
+    cardTimeProgress: '📅 Time Progress',
+    cardDone: '✅ Done in Sprint',
+    cardRemaining: '⏱ Remaining',
+    cardLoad: '👥 Workload',
+    dayOf: 'Day',
+    of: 'of',
+    tasks: 'tasks',
+    daysAhead: 'h ahead',
+    daysBehind: 'h behind',
+    burndownTitle: '📉 Burndown',
+    burndownActive: '(active)',
+    burndownNext: '(next)',
+    burndownIdeal: 'ideal',
+    burndownReal: 'actual',
+    burndownToday: 'today',
+    risksTitle: '⚠️ Risks & Status',
+    noRisks: 'No risks detected',
+    scopeTitle: '📦 Sprint Scope',
+    scopeNew: '🆕 New tasks',
+    scopeNewSub: 'started this sprint',
+    scopeCarry: '🔄 Carry-over',
+    scopeCarrySub: 'from previous sprint',
+    scopeAdded: '➕ Added mid-sprint',
+    scopeAddedSub: 'scope creep',
+    carryRFD: '✅ Ready for Deploy',
+    carryInProgress: '🧪 In progress/test',
+    carryTodo: '📋 To Do',
+    viewActiveCarry: 'View active carry-over',
+    viewAddedMid: '➕ View tasks added mid-sprint',
+    noCarryOver: '🎉 No carry-over — clean sprint start!',
+    addedAfterStart: 'Added after sprint start:',
+    stuckTitle: '🎯 Problem Tasks',
+    stuckNone: 'No stuck tasks detected',
+    stuckNeedAttention: 'tasks need attention',
+    aiTitle: 'AI Sprint Analysis',
+    aiNotStarted: 'not started',
+    aiGenerating: 'Generating...',
+    aiRunBtn: '✨ Run AI Analysis',
+    aiUpdateBtn: '✨ Update Analysis',
+    aiPlaceholder: 'Click the button to have Claude analyze the current sprint and provide recommendations.',
+    // Modal
+    modalApplyTitle: 'Apply Changes to Jira',
+    modalCancel: 'Cancel',
+    modalApply: 'Save to Jira',
+    // Setup
+    setupTitle: 'Sprint Capacity Planning',
+    setupSub: 'Connect Jira and configure your team — once, then automatic.',
+    setupJiraUrl: 'Jira URL',
+    setupEmail: 'Email',
+    setupToken: 'API Token',
+    setupProxy: 'Proxy URL',
+    setupProject: 'Jira Project Key',
+    setupTeam: 'Team (Jira name → initials → role)',
+    setupAddMember: '+ Add member',
+    setupConnect: 'Connect and load sprint',
+    // Notices
+    noChanges: 'No changes — drag a task between sprints or members.',
+    appliedOk: 'updated in Jira!',
+    // Loading
+    loadingActiveSprint: 'Finding active sprints...',
+    loadingPrevSprint: 'Loading previous sprint data...',
+    loadingEpics: 'Loading epics...',
+    loadingBacklog: 'Loading backlog...',
+  }
+};
+
+function t(key) { return T[currentLang]?.[key] || T.uk[key] || key; }
+
+function switchLang() {
+  currentLang = currentLang === 'uk' ? 'en' : 'uk';
+  localStorage.setItem('capacity-lang', currentLang);
+  applyLang();
+  renderAll(_backlog);
+}
+
+function applyLang() {
+  const isEn = currentLang === 'en';
+  const btn = document.getElementById('lang-btn');
+  if (btn) btn.textContent = isEn ? '🇺🇦 UA' : '🇬🇧 EN';
+
+  // Static UI elements
+  const map = {
+    'app-title': t('appTitle'),
+    'app-subtitle': t('appSubtitle'),
+    'btn-all': t('btnAll'),
+    'btn-inprogress': t('btnInProgress'),
+    'btn-noest': t('btnNoEst'),
+    'tog-btn': t('btnCollapse'),
+    'tab-backlog-label': t('tabBacklog'),
+    'tab-analytics-label': t('tabAnalytics'),
+    'tab-hint-text': t('tabHint'),
+    'modal-title-text': t('modalApplyTitle'),
+  };
+  Object.entries(map).forEach(([id, text]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  });
+
+  // Buttons with data-i18n
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (T[currentLang]?.[key]) el.textContent = T[currentLang][key];
+  });
+}
 </script>
 </body>
 </html>
