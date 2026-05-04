@@ -440,7 +440,8 @@ const ROLE_COLORS = {
   Other:   {bg:'#F1EFE8',color:'#5F5E5A'},
 };
 const SC = {
-  'Ready for Deploy': {color:'#0F6E56',bg:'#E1F5EE'},
+  'Ready for Deploy':       {color:'#0F6E56',bg:'#E1F5EE'},
+  'Ready for Development':  {color:'#185FA5',bg:'#E6F1FB'},
   'Done':             {color:'#0F6E56',bg:'#E1F5EE'},
   'Rejected':         {color:'#888780',bg:'#F1EFE8'},
   'Cancelled':        {color:'#888780',bg:'#F1EFE8'},
@@ -449,9 +450,10 @@ const SC = {
   'Testing':     {color:'#BA7517',bg:'#FAEEDA'},
   'To Test':     {color:'#7F77DD',bg:'#EEEDFE'},
   'Review':      {color:'#D85A30',bg:'#FAECE7'},
-  'Ready for Deploy': {color:'#0F6E56',bg:'#E1F5EE'},
+  'Ready for Deploy':       {color:'#0F6E56',bg:'#E1F5EE'},
+  'Ready for Development':  {color:'#185FA5',bg:'#E6F1FB'},
 };
-const STATUS_ORDER = ['In Progress','To do','Testing','To Test','Review','Ready for Deploy','Done','Rejected'];
+const STATUS_ORDER = ['In Progress','Ready for Development','To do','Testing','To Test','Review','Ready for Deploy','Done','Rejected'];
 const HPD = 8;
 const SKIP_STATUSES = new Set([]); // Nothing skipped - Ready for Deploy counted as Done
 
