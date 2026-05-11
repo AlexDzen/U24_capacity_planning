@@ -642,9 +642,13 @@ async function searchJira(jql, fields, startAt=0, maxResults=100) {
 const FIELDS = ['summary','assignee','status','issuetype','timeestimate','timeoriginalestimate','timespent','parent','customfield_10020','components','priority','customfield_10014','customfield_10015','created','updated'];
 
 async function fetchPersonIssues(sprintName, personName) {
-  const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
-  const data = await searchJira(jql, [...FIELDS, 'parent']);
-  return data.issues || [];
+  try {
+    const jql = `project = ${cfg.project} AND sprint = "${sprintName}" AND assignee = "${personName}"`;
+    const data = await searchJira(jql, [...FIELDS, 'parent']);
+    return data.issues || [];
+  } catch(e) {
+    return []; // Empty sprint returns no issues
+  }
 }
 
 async function fetchUnassignedIssues(sprintName) {
@@ -700,26 +704,53 @@ async function fetchSprintMeta(sprintName) {
 }
 
 async function fetchAllSprints() {
-  // Get active + future sprints only (no closed)
   const results = [];
-  for (const jqlFilter of ['openSprints()', 'futureSprints()']) {
-    try {
-      const jql = `project = ${cfg.project} AND sprint in ${jqlFilter}`;
-      const data = await searchJira(jql, ['customfield_10020'], 0, 1);
-      const issue = data.issues?.[0];
-      if (!issue) continue;
-      const spFields = (issue.fields.customfield_10020 || []).filter(s =>
-        s.state === 'active' || s.state === 'future'
-      );
-      spFields.forEach(s => { if (!results.find(r=>r.id===s.id)) results.push(s); });
-    } catch(e) { console.warn('fetchAllSprints:', jqlFilter, e); }
-  }
+  // Active sprints via JQL
+  try {
+    const jql = `project = ${cfg.project} AND sprint in openSprints()`;
+    const data = await searchJira(jql, ['customfield_10020'], 0, 1);
+    const issue = data.issues?.[0];
+    if (issue) {
+      (issue.fields.customfield_10020 || [])
+        .filter(s => s.state === 'active')
+        .forEach(s => { if (!results.find(r=>r.id===s.id)) results.push(s); });
+    }
+  } catch(e) {}
+
+  // Future sprints via Agile API (handles empty sprints)
+  try {
+    const boardId = _boardId;
+    if (boardId) {
+      const agileUrl = buildAgileUrl(`/board/${boardId}/sprint?state=future`);
+      const res = await fetch(agileUrl, { method: 'GET', headers: jiraHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        (data.values || []).forEach(s => {
+          if (!results.find(r=>r.id===s.id)) results.push(s);
+        });
+      }
+    }
+  } catch(e) {}
+
   const order = {active:0, future:1};
   return results.sort((a,b) => (order[a.state]||1) - (order[b.state]||1));
 }
 
+let _boardId = null;
+
+async function getBoardId() {
+  if (_boardId) return _boardId;
+  // Get board ID from active sprint issues
+  const jql = `project = ${cfg.project} AND sprint in openSprints()`;
+  const data = await searchJira(jql, ['customfield_10020'], 0, 1);
+  const issue = data.issues?.[0];
+  const sprint = (issue?.fields?.customfield_10020 || []).find(s => s.state === 'active');
+  if (sprint?.boardId) { _boardId = sprint.boardId; return _boardId; }
+  return null;
+}
+
 async function getActiveSprints() {
-  // Fetch active sprint
+  // Fetch active sprint via JQL
   const activeJql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
   const activeData = await searchJira(activeJql, ['customfield_10020'], 0, 1);
   const activeIssue = (activeData.issues || [])[0];
@@ -727,22 +758,27 @@ async function getActiveSprints() {
     ? (activeIssue.fields.customfield_10020 || []).filter(s => s.state === 'active')
     : [];
 
-  // Fetch future sprint
+  // Get board ID for Agile API
+  if (activeSprints[0]?.boardId) _boardId = activeSprints[0].boardId;
+
+  // Fetch future sprints via Agile API (works even for empty sprints)
   let futureSprints = [];
   try {
-    const futureJql = `project = ${cfg.project} AND sprint in futureSprints() ORDER BY created ASC`;
-    const futureData = await searchJira(futureJql, ['customfield_10020'], 0, 1);
-    const futureIssue = (futureData.issues || [])[0];
-    futureSprints = futureIssue
-      ? (futureIssue.fields.customfield_10020 || []).filter(s => s.state === 'future')
-      : [];
+    const boardId = _boardId || activeSprints[0]?.boardId;
+    if (boardId) {
+      const agileUrl = buildAgileUrl(`/board/${boardId}/sprint?state=future`);
+      const res = await fetch(agileUrl, { method: 'GET', headers: jiraHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        futureSprints = (data.values || []).slice(0, 1); // take only next sprint
+      }
+    }
   } catch(e) {
-    console.warn('No future sprints found:', e.message);
+    console.warn('Future sprints via Agile API failed:', e.message);
   }
 
   // Combine: active first, then future (up to 2 total)
   const all = [...activeSprints, ...futureSprints];
-  // Deduplicate by id
   const seen = new Set();
   return all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }).slice(0, 2);
 }
@@ -1649,6 +1685,15 @@ function renderAll(backlogIssues) {
   const bpct = document.getElementById('tab-pct-backlog');
   if (bpct) bpct.textContent = _backlog.length ? `${_backlog.length}` : '';
   const changes = getChanges().map(c=>c.key);
+
+  // Show/hide sprint tabs based on loaded sprints
+  for (let i = 0; i <= 1; i++) {
+    const tabEl = document.getElementById(`tab-s${i}`);
+    if (tabEl) tabEl.style.display = i < sprints.length ? '' : 'none';
+    if (i >= sprints.length) document.getElementById(`panel-${i}`)?.classList.remove('active');
+  }
+  // If current tab doesn't exist anymore, switch to 0
+  if (typeof currentTab === 'number' && currentTab >= sprints.length) switchTab(0);
 
   // Update tab labels
   sprints.forEach((sp,si) => {
