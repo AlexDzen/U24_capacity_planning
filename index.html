@@ -750,37 +750,44 @@ async function getBoardId() {
 }
 
 async function getActiveSprints() {
-  // Fetch active sprint via JQL
+  // Step 1: Find board ID via Agile API
+  try {
+    const boardRes = await fetch(buildAgileUrl(`/board?projectKeyOrId=${cfg.project}&type=scrum`), {
+      method: 'GET', headers: jiraHeaders()
+    });
+    if (boardRes.ok) {
+      const boardData = await boardRes.json();
+      const board = (boardData.values || [])[0];
+      if (board?.id) _boardId = board.id;
+    }
+  } catch(e) { console.warn('Board lookup failed:', e); }
+
+  // Step 2: Get active + future sprints via Agile API (works for empty sprints too)
+  if (_boardId) {
+    try {
+      const activeRes = await fetch(buildAgileUrl(`/board/${_boardId}/sprint?state=active`), {
+        method: 'GET', headers: jiraHeaders()
+      });
+      const futureRes = await fetch(buildAgileUrl(`/board/${_boardId}/sprint?state=future`), {
+        method: 'GET', headers: jiraHeaders()
+      });
+      const activeSprints = activeRes.ok ? ((await activeRes.json()).values || []) : [];
+      const futureSprints = futureRes.ok ? ((await futureRes.json()).values || []).slice(0, 1) : [];
+      const all = [...activeSprints, ...futureSprints];
+      if (all.length > 0) return all.slice(0, 2);
+    } catch(e) { console.warn('Agile sprint fetch failed:', e); }
+  }
+
+  // Step 3: Fallback to JQL if Agile API fails
   const activeJql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
   const activeData = await searchJira(activeJql, ['customfield_10020'], 0, 1);
   const activeIssue = (activeData.issues || [])[0];
   const activeSprints = activeIssue
     ? (activeIssue.fields.customfield_10020 || []).filter(s => s.state === 'active')
     : [];
-
-  // Get board ID for Agile API
   if (activeSprints[0]?.boardId) _boardId = activeSprints[0].boardId;
-
-  // Fetch future sprints via Agile API (works even for empty sprints)
-  let futureSprints = [];
-  try {
-    const boardId = _boardId || activeSprints[0]?.boardId;
-    if (boardId) {
-      const agileUrl = buildAgileUrl(`/board/${boardId}/sprint?state=future`);
-      const res = await fetch(agileUrl, { method: 'GET', headers: jiraHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        futureSprints = (data.values || []).slice(0, 1); // take only next sprint
-      }
-    }
-  } catch(e) {
-    console.warn('Future sprints via Agile API failed:', e.message);
-  }
-
-  // Combine: active first, then future (up to 2 total)
-  const all = [...activeSprints, ...futureSprints];
-  const seen = new Set();
-  return all.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }).slice(0, 2);
+  if (activeSprints.length === 0) throw new Error('Не знайдено активних спринтів у проекті ' + cfg.project);
+  return activeSprints.slice(0, 1);
 }
 
 function parseIssue(i) {
