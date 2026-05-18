@@ -772,22 +772,30 @@ async function getActiveSprints() {
         method: 'GET', headers: jiraHeaders()
       });
       const activeSprints = activeRes.ok ? ((await activeRes.json()).values || []) : [];
-      const futureSprints = futureRes.ok ? ((await futureRes.json()).values || []).slice(0, 1) : [];
-      const all = [...activeSprints, ...futureSprints];
+      const futureSprints = futureRes.ok ? ((await futureRes.json()).values || []) : [];
+
+      // If no active sprint — use future sprints (planning mode)
+      const all = activeSprints.length > 0
+        ? [...activeSprints, ...futureSprints.slice(0, 1)]
+        : futureSprints.slice(0, 2);
+
       if (all.length > 0) return all.slice(0, 2);
     } catch(e) { console.warn('Agile sprint fetch failed:', e); }
   }
 
-  // Step 3: Fallback to JQL if Agile API fails
-  const activeJql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
-  const activeData = await searchJira(activeJql, ['customfield_10020'], 0, 1);
-  const activeIssue = (activeData.issues || [])[0];
-  const activeSprints = activeIssue
-    ? (activeIssue.fields.customfield_10020 || []).filter(s => s.state === 'active')
-    : [];
-  if (activeSprints[0]?.boardId) _boardId = activeSprints[0].boardId;
-  if (activeSprints.length === 0) throw new Error('Не знайдено активних спринтів у проекті ' + cfg.project);
-  return activeSprints.slice(0, 1);
+  // Step 3: Fallback to JQL
+  try {
+    const activeJql = `project = ${cfg.project} AND sprint in openSprints() ORDER BY created ASC`;
+    const activeData = await searchJira(activeJql, ['customfield_10020'], 0, 1);
+    const activeIssue = (activeData.issues || [])[0];
+    const activeSprints = activeIssue
+      ? (activeIssue.fields.customfield_10020 || []).filter(s => s.state === 'active')
+      : [];
+    if (activeSprints[0]?.boardId) _boardId = activeSprints[0].boardId;
+    if (activeSprints.length > 0) return activeSprints.slice(0, 1);
+  } catch(e) {}
+
+  throw new Error('Не знайдено активних або майбутніх спринтів у проекті ' + cfg.project);
 }
 
 function parseIssue(i) {
@@ -948,10 +956,11 @@ async function loadData() {
 
     sprints.push({
       id: si, name: sp.name,
-      dates: formatDates(sp.startDate, sp.endDate),
+      dates: formatDates(sp.startDate||'', sp.endDate||''),
       startDate: sp.startDate,
       endDate: sp.endDate,
       goal: sp.goal || '',
+      state: sp.state || 'future',
       tasks,
       prevSprintInfo,
     });
@@ -1740,8 +1749,8 @@ function renderAll(backlogIssues) {
       <div class="sprint-header">
         <div class="sprint-top">
           <span class="sprint-name">${sp.name}</span>
-          <span class="sprint-badge" style="background:${si===0?'#E6F1FB':'#E1F5EE'};color:${si===0?'#185FA5':'#0F6E56'};">
-            ${si===0?'Активний':'Наступний'}
+          <span class="sprint-badge" style="background:${sp.state==='active'?'#E6F1FB':sp.state==='future'?'#FAEEDA':'#E1F5EE'};color:${sp.state==='active'?'#185FA5':sp.state==='future'?'#854F0B':'#0F6E56'};">
+            ${sp.state==='active'?'Активний':sp.state==='future'?'Майбутній':'Наступний'}
           </span>
         </div>
         <div class="sprint-dates">${sp.dates}</div>
